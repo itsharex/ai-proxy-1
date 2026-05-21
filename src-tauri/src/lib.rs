@@ -44,6 +44,25 @@ pub fn run() {
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            ipc::provider_cmd::get_providers,
+            ipc::provider_cmd::create_provider,
+            ipc::provider_cmd::update_provider,
+            ipc::provider_cmd::delete_provider,
+            ipc::key_cmd::get_api_keys,
+            ipc::key_cmd::create_api_key,
+            ipc::key_cmd::delete_api_key,
+            ipc::routing_cmd::get_routes,
+            ipc::routing_cmd::create_route,
+            ipc::routing_cmd::delete_route,
+            ipc::log_cmd::get_logs,
+            ipc::log_cmd::get_log_detail,
+            ipc::usage_cmd::get_usage_stats,
+            ipc::interceptor_cmd::get_rules,
+            ipc::interceptor_cmd::create_rule,
+            ipc::interceptor_cmd::update_rule,
+            ipc::interceptor_cmd::delete_rule,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
