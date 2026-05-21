@@ -1,6 +1,6 @@
-mod converter;
+pub mod converter;
 mod db;
-mod error;
+pub mod error;
 mod interceptor;
 mod ipc;
 mod key;
