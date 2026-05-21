@@ -1,8 +1,8 @@
 <template>
   <div class="rules-view">
     <n-space style="margin-bottom: 16px" justify="space-between" align="center">
-      <n-h3 style="margin: 0">Interceptor Rules</n-h3>
-      <n-button type="primary" @click="openAddModal">Add Rule</n-button>
+      <n-h3 style="margin: 0">{{ t('rules.title') }}</n-h3>
+      <n-button type="primary" @click="openAddModal">{{ t('rules.add') }}</n-button>
     </n-space>
 
     <n-data-table
@@ -13,15 +13,15 @@
       size="small"
     />
 
-    <n-modal v-model:show="showAddModal" title="Add Interceptor Rule" preset="card" style="width: 560px">
+    <n-modal v-model:show="showAddModal" :title="t('rules.addRule')" preset="card" style="width: 560px">
       <n-form :model="newRule" label-placement="left" label-width="120">
-        <n-form-item label="Name">
+        <n-form-item :label="t('common.name')">
           <n-input v-model:value="newRule.name" placeholder="Rule name" />
         </n-form-item>
-        <n-form-item label="Phase">
+        <n-form-item :label="t('rules.phase')">
           <n-select v-model:value="newRule.phase" :options="phaseOptions" />
         </n-form-item>
-        <n-form-item label="Condition Type">
+        <n-form-item :label="t('rules.conditionType')">
           <n-select v-model:value="newRule.conditionType" :options="conditionTypeOptions" @update:value="resetCondition" />
         </n-form-item>
         <n-form-item v-if="newRule.conditionType === 'model_matches'" label="Pattern">
@@ -33,7 +33,7 @@
         <n-form-item v-if="newRule.conditionType === 'header_exists'" label="Header Name">
           <n-input v-model:value="newRule.conditionData.name" placeholder="X-Custom" />
         </n-form-item>
-        <n-form-item label="Action Type">
+        <n-form-item :label="t('rules.actionType')">
           <n-select v-model:value="newRule.actionType" :options="actionTypeOptions" @update:value="resetAction" />
         </n-form-item>
         <n-form-item v-if="newRule.actionType === 'replace_model'" label="New Model">
@@ -63,14 +63,14 @@
         <n-form-item v-if="newRule.actionType === 'filter_response'" label="Replacement">
           <n-input v-model:value="newRule.actionData.replacement" placeholder="replacement text" />
         </n-form-item>
-        <n-form-item label="Priority">
+        <n-form-item :label="t('common.priority')">
           <n-input-number v-model:value="newRule.priority" :min="0" :max="1000" style="width: 100%" />
         </n-form-item>
       </n-form>
       <template #action>
         <n-space>
-          <n-button @click="showAddModal = false">Cancel</n-button>
-          <n-button type="primary" @click="handleCreateRule" :loading="creating">Create</n-button>
+          <n-button @click="showAddModal = false">{{ t('common.cancel') }}</n-button>
+          <n-button type="primary" @click="handleCreateRule" :loading="creating">{{ t('common.create') }}</n-button>
         </n-space>
       </template>
     </n-modal>
@@ -78,40 +78,42 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
+import { ref, h, computed, onMounted } from 'vue'
 import {
   NDataTable, NButton, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NSpace, NTag, NSwitch,
   type DataTableColumns,
 } from 'naive-ui'
 import { useMessage } from 'naive-ui'
+import { useI18n } from 'vue-i18n'
 import { invoke } from '@tauri-apps/api/core'
 import type { InterceptorRule } from '../types'
 
+const { t } = useI18n()
 const message = useMessage()
 const rules = ref<InterceptorRule[]>([])
 const showAddModal = ref(false)
 const creating = ref(false)
 
-const phaseOptions = [
-  { label: 'Pre-request', value: 'pre' },
-  { label: 'Post-response', value: 'post' },
-]
+const phaseOptions = computed(() => [
+  { label: t('rules.preRequest'), value: 'pre' },
+  { label: t('rules.postResponse'), value: 'post' },
+])
 
-const conditionTypeOptions = [
-  { label: 'Model Matches', value: 'model_matches' },
-  { label: 'Path Contains', value: 'path_contains' },
-  { label: 'Header Exists', value: 'header_exists' },
-  { label: 'Always', value: 'always' },
-]
+const conditionTypeOptions = computed(() => [
+  { label: t('rules.conditionModel'), value: 'model_matches' },
+  { label: t('rules.conditionPath'), value: 'path_contains' },
+  { label: t('rules.conditionHeader'), value: 'header_exists' },
+  { label: t('rules.conditionAlways'), value: 'always' },
+])
 
-const actionTypeOptions = [
-  { label: 'Replace Model', value: 'replace_model' },
-  { label: 'Set Header', value: 'set_header' },
-  { label: 'Remove Header', value: 'remove_header' },
-  { label: 'Inject System Prompt', value: 'inject_system_prompt' },
-  { label: 'Override Parameter', value: 'override_parameter' },
-  { label: 'Filter Response', value: 'filter_response' },
-]
+const actionTypeOptions = computed(() => [
+  { label: t('rules.actionReplaceModel'), value: 'replace_model' },
+  { label: t('rules.actionSetHeader'), value: 'set_header' },
+  { label: t('rules.actionRemoveHeader'), value: 'remove_header' },
+  { label: t('rules.actionInjectPrompt'), value: 'inject_system_prompt' },
+  { label: t('rules.actionOverrideParam'), value: 'override_parameter' },
+  { label: t('rules.actionFilterResponse'), value: 'filter_response' },
+])
 
 const newRule = ref({
   name: '',
@@ -147,38 +149,38 @@ function openAddModal() {
 function conditionSummary(rule: InterceptorRule): string {
   const c = rule.condition
   switch (c.type) {
-    case 'model_matches': return `model ~ ${c.pattern}`
-    case 'path_contains': return `path contains "${c.substring}"`
-    case 'header_exists': return `header "${c.name}" exists`
-    case 'always': return 'always'
+    case 'model_matches': return t('rules.summaryModelPattern', { pattern: c.pattern })
+    case 'path_contains': return t('rules.summaryPathContains', { substring: c.substring })
+    case 'header_exists': return t('rules.summaryHeaderExists', { name: c.name })
+    case 'always': return t('rules.summaryAlways')
   }
 }
 
 function actionSummary(rule: InterceptorRule): string {
   const a = rule.action
   switch (a.type) {
-    case 'replace_model': return `model -> ${a.new_model}`
-    case 'set_header': return `set ${a.name}`
-    case 'remove_header': return `remove ${a.name}`
-    case 'inject_system_prompt': return 'inject prompt'
-    case 'override_parameter': return `${a.key} = ${String(a.value)}`
-    case 'filter_response': return `filter /${a.pattern}/`
+    case 'replace_model': return t('rules.summaryReplaceModel', { model: a.new_model })
+    case 'set_header': return t('rules.summarySetHeader', { name: a.name })
+    case 'remove_header': return t('rules.summaryRemoveHeader', { name: a.name })
+    case 'inject_system_prompt': return t('rules.summaryInjectPrompt')
+    case 'override_parameter': return t('rules.summaryOverrideParam', { key: a.key, value: String(a.value) })
+    case 'filter_response': return t('rules.summaryFilterResponse', { pattern: a.pattern })
   }
 }
 
 const columns: DataTableColumns<InterceptorRule> = [
-  { title: 'Name', key: 'name', width: 180 },
-  { title: 'Phase', key: 'phase', width: 80, render: (row) => h(NTag, { size: 'small', type: row.phase === 'pre' ? 'info' : 'warning' }, { default: () => row.phase }) },
-  { title: 'Condition', key: 'condition', render: (row) => conditionSummary(row) },
-  { title: 'Action', key: 'action', render: (row) => actionSummary(row) },
-  { title: 'Priority', key: 'priority', width: 80 },
+  { title: t('common.name'), key: 'name', width: 180 },
+  { title: t('rules.phase'), key: 'phase', width: 80, render: (row) => h(NTag, { size: 'small', type: row.phase === 'pre' ? 'info' : 'warning' }, { default: () => row.phase }) },
+  { title: t('rules.condition'), key: 'condition', render: (row) => conditionSummary(row) },
+  { title: t('rules.action'), key: 'action', render: (row) => actionSummary(row) },
+  { title: t('common.priority'), key: 'priority', width: 80 },
   {
-    title: 'Enabled', key: 'enabled', width: 80,
+    title: t('common.enabled'), key: 'enabled', width: 80,
     render: (row) => h(NSwitch, { value: row.enabled, onUpdateValue: (v: boolean) => handleToggle(row.id, v) }),
   },
   {
     title: '', key: 'actions', width: 80,
-    render: (row) => h(NButton, { size: 'small', type: 'error', quaternary: true, onClick: () => handleDeleteRule(row.id) }, { default: () => 'Delete' }),
+    render: (row) => h(NButton, { size: 'small', type: 'error', quaternary: true, onClick: () => handleDeleteRule(row.id) }, { default: () => t('common.delete') }),
   },
 ]
 
@@ -186,7 +188,7 @@ async function loadRules() {
   try {
     rules.value = await invoke<InterceptorRule[]>('get_rules')
   } catch (e) {
-    message.error(`Failed to load rules: ${e}`)
+    message.error(t('rules.loadFailed', { error: String(e) }))
   }
 }
 
@@ -195,17 +197,17 @@ async function handleToggle(id: string, enabled: boolean) {
     await invoke('update_rule', { id, enabled })
     await loadRules()
   } catch (e) {
-    message.error(`Failed: ${e}`)
+    message.error(t('rules.createFailed', { error: String(e) }))
   }
 }
 
 async function handleDeleteRule(id: string) {
   try {
     await invoke('delete_rule', { id })
-    message.success('Rule deleted')
+    message.success(t('rules.deleted'))
     await loadRules()
   } catch (e) {
-    message.error(`Failed: ${e}`)
+    message.error(t('rules.deleteFailed', { error: String(e) }))
   }
 }
 
@@ -221,11 +223,11 @@ async function handleCreateRule() {
       actionJson,
       priority: newRule.value.priority,
     })
-    message.success('Rule created')
+    message.success(t('rules.created'))
     showAddModal.value = false
     await loadRules()
   } catch (e) {
-    message.error(`Failed: ${e}`)
+    message.error(t('rules.createFailed', { error: String(e) }))
   } finally {
     creating.value = false
   }

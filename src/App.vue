@@ -13,7 +13,7 @@
           @expand="collapsed = false"
         >
           <div class="sider-header">
-            <span v-if="!collapsed" class="app-title">AI Proxy</span>
+            <span v-if="!collapsed" class="app-title">{{ t('app.title') }}</span>
             <span v-else class="app-title-short">AP</span>
           </div>
           <n-menu
@@ -29,7 +29,7 @@
           <n-layout-header bordered style="height: 48px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between">
             <span style="font-size: 14px; font-weight: 500">{{ currentRouteName }}</span>
             <n-tag :type="serverRunning ? 'success' : 'error'" size="small" round>
-              {{ serverRunning ? 'Server Running' : 'Server Stopped' }}
+              {{ serverRunning ? t('app.status.running') : t('app.status.stopped') }}
             </n-tag>
           </n-layout-header>
           <n-layout-content style="padding: 24px; overflow: auto" content-style="height: 100%">
@@ -44,6 +44,7 @@
 <script setup lang="ts">
 import { ref, computed, h, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import {
   NConfigProvider,
   NLayout,
@@ -69,25 +70,29 @@ import { invoke } from '@tauri-apps/api/core'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const collapsed = ref(false)
 const serverRunning = ref(false)
 
 const currentRoute = computed(() => route.path)
-const currentRouteName = computed(() => String(route.name || 'Dashboard'))
+const currentRouteName = computed(() => {
+  const name = String(route.name || 'Dashboard').toLowerCase()
+  return t(`nav.${name}`)
+})
 
 function renderIcon(icon: unknown) {
   return () => h(icon as Parameters<typeof h>[0], { size: 20 })
 }
 
-const menuOptions: MenuOption[] = [
-  { label: 'Dashboard', key: '/', icon: renderIcon(HomeOutline) },
-  { label: 'Providers', key: '/providers', icon: renderIcon(ServerOutline) },
-  { label: 'Models', key: '/models', icon: renderIcon(GitMergeOutline) },
-  { label: 'Rules', key: '/rules', icon: renderIcon(ShieldCheckmarkOutline) },
-  { label: 'Logs', key: '/logs', icon: renderIcon(DocumentTextOutline) },
-  { label: 'Statistics', key: '/statistics', icon: renderIcon(StatsChartOutline) },
-  { label: 'Settings', key: '/settings', icon: renderIcon(SettingsOutline) },
-]
+const menuOptions = computed<MenuOption[]>(() => [
+  { label: () => t('nav.dashboard'), key: '/', icon: renderIcon(HomeOutline) },
+  { label: () => t('nav.providers'), key: '/providers', icon: renderIcon(ServerOutline) },
+  { label: () => t('nav.models'), key: '/models', icon: renderIcon(GitMergeOutline) },
+  { label: () => t('nav.rules'), key: '/rules', icon: renderIcon(ShieldCheckmarkOutline) },
+  { label: () => t('nav.logs'), key: '/logs', icon: renderIcon(DocumentTextOutline) },
+  { label: () => t('nav.statistics'), key: '/statistics', icon: renderIcon(StatsChartOutline) },
+  { label: () => t('nav.settings'), key: '/settings', icon: renderIcon(SettingsOutline) },
+])
 
 function handleMenuSelect(key: string) {
   router.push(key)
