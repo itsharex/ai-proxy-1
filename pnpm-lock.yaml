@@ -14,6 +14,9 @@ importers:
       '@tauri-apps/plugin-shell':
         specifier: ^2.3.5
         version: 2.3.5
+      '@vicons/ionicons5':
+        specifier: ^0.13.0
+        version: 0.13.0
       echarts:
         specifier: ^6.1.0
         version: 6.1.0
@@ -23,9 +26,15 @@ importers:
       pinia:
         specifier: ^3.0.4
         version: 3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3))
+      vfonts:
+        specifier: ^0.0.3
+        version: 0.0.3
       vue:
         specifier: ^3.5.34
         version: 3.5.34(typescript@6.0.3)
+      vue-echarts:
+        specifier: ^8.0.1
+        version: 8.0.1(echarts@6.1.0)(vue@3.5.34(typescript@6.0.3))
       vue-router:
         specifier: ^5.0.7
         version: 5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3))
@@ -333,6 +342,9 @@ packages:
 
   '@types/node@25.9.1':
     resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+
+  '@vicons/ionicons5@0.13.0':
+    resolution: {integrity: sha512-zvZKBPjEXKN7AXNo2Na2uy+nvuv6SP4KAMQxpKL2vfHMj0fSvuw7JZcOPCjQC3e7ayssKnaoFVAhbYcW6v41qQ==}
 
   '@vitejs/plugin-vue@6.0.7':
     resolution: {integrity: sha512-km+p+XdSz9Sxm5rqUbqcSfZYaAniKxWBj1KURl+Jr7UaPvvX7BmaWMdP69I5rrFDeQGyxAG7NXdc57vz+snhWg==}
@@ -736,6 +748,9 @@ packages:
     peerDependencies:
       vue: ^3.0.11
 
+  vfonts@0.0.3:
+    resolution: {integrity: sha512-nguyw8L6Un8eelg1vQ31vIU2ESxqid7EYmy8V+MDeMaHBqaRSkg3dTBToC1PR00D89UzS/SLkfYPnx0Wf23IQQ==}
+
   vite@8.0.14:
     resolution: {integrity: sha512-s4BJJ+5y1pYL6Otw51FHhVJQhPnuRinKig64g/1+EUNaJsd3gCKdD31IPFvswUgW9/60QT9oFHbZHbQK5imcxw==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -786,6 +801,12 @@ packages:
 
   vscode-uri@3.1.0:
     resolution: {integrity: sha512-/BpdSx+yCQGnCvecbyXdxHDkuk55/G3xwnC0GqY4gmQ3j+A+g8kzzgB4Nk/SINjqn6+waqw3EgbVF2QKExkRxQ==}
+
+  vue-echarts@8.0.1:
+    resolution: {integrity: sha512-23rJTFLu1OUEGRWjJGmdGt8fP+8+ja1gVgzMYPIPaHWpXegcO1viIAaeu2H4QHESlVeHzUAHIxKXGrwjsyXAaA==}
+    peerDependencies:
+      echarts: ^6.0.0
+      vue: ^3.3.0
 
   vue-router@5.0.7:
     resolution: {integrity: sha512-dqfk8kvRbCutmCOCj/XLDqDEYxc1wBdAOGLuVy5M93ifYMsBd5fIjfaPN4tQAbxr5IprdBDIox1gr4wYyOx/SA==}
@@ -1045,6 +1066,8 @@ snapshots:
   '@types/node@25.9.1':
     dependencies:
       undici-types: 7.24.6
+
+  '@vicons/ionicons5@0.13.0': {}
 
   '@vitejs/plugin-vue@6.0.7(vite@8.0.14(@types/node@25.9.1)(yaml@2.9.0))(vue@3.5.34(typescript@6.0.3))':
     dependencies:
@@ -1458,6 +1481,8 @@ snapshots:
       evtd: 0.2.4
       vue: 3.5.34(typescript@6.0.3)
 
+  vfonts@0.0.3: {}
+
   vite@8.0.14(@types/node@25.9.1)(yaml@2.9.0):
     dependencies:
       lightningcss: 1.32.0
@@ -1476,6 +1501,11 @@ snapshots:
       vue: 3.5.34(typescript@6.0.3)
 
   vscode-uri@3.1.0: {}
+
+  vue-echarts@8.0.1(echarts@6.1.0)(vue@3.5.34(typescript@6.0.3)):
+    dependencies:
+      echarts: 6.1.0
+      vue: 3.5.34(typescript@6.0.3)
 
   vue-router@5.0.7(@vue/compiler-sfc@3.5.34)(pinia@3.0.4(typescript@6.0.3)(vue@3.5.34(typescript@6.0.3)))(vue@3.5.34(typescript@6.0.3)):
     dependencies:
