@@ -1,4 +1,14 @@
+mod converter;
 mod db;
+mod error;
+mod interceptor;
+mod ipc;
+mod key;
+mod logging;
+mod provider;
+mod routing;
+mod server;
+mod usage;
 
 use tauri::Manager;
 
@@ -18,6 +28,18 @@ pub fn run() {
                 db::init::init_db(db_path.to_str().unwrap())
                     .await
                     .expect("failed to initialize database");
+            });
+
+            let host = "127.0.0.1".to_string();
+            let port = 7860u16;
+            let host_clone = host.clone();
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    if let Err(e) = server::start_server(host_clone, port).await {
+                        tracing::error!("Server error: {}", e);
+                    }
+                });
             });
 
             Ok(())
