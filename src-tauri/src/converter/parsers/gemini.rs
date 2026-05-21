@@ -1,0 +1,1 @@
+// Gemini format parser — placeholder
