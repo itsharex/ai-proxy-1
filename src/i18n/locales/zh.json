@@ -93,7 +93,11 @@
     "deleted": "路由已删除",
     "loadFailed": "加载数据失败：{error}",
     "createFailed": "操作失败：{error}",
-    "deleteFailed": "操作失败：{error}"
+    "deleteFailed": "操作失败：{error}",
+    "test": "测试",
+    "testing": "测试中...",
+    "testSuccess": "路由通畅 ({ms}ms)",
+    "testFailed": "路由测试失败：{error}"
   },
   "rules": {
     "title": "拦截规则",

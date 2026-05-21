@@ -93,7 +93,11 @@
     "deleted": "Route deleted",
     "loadFailed": "Failed to load data: {error}",
     "createFailed": "Failed: {error}",
-    "deleteFailed": "Failed: {error}"
+    "deleteFailed": "Failed: {error}",
+    "test": "Test",
+    "testing": "Testing...",
+    "testSuccess": "Route OK ({ms}ms)",
+    "testFailed": "Route test failed: {error}"
   },
   "rules": {
     "title": "Interceptor Rules",

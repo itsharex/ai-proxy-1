@@ -63,6 +63,7 @@ const routes = ref<ModelRoute[]>([])
 const providers = ref<Provider[]>([])
 const showAddModal = ref(false)
 const creating = ref(false)
+const testingId = ref<string | null>(null)
 
 const formatOptions = computed(() => [
   { label: t('format.completions'), value: 'completions' },
@@ -103,8 +104,19 @@ const columns = computed<DataTableColumns<ModelRoute>>(() => [
   { title: t('models.fallback'), key: 'fallback_provider_id', width: 120, render: (row) => row.fallback_provider_id ? providerName(row.fallback_provider_id) : '-' },
   { title: t('common.priority'), key: 'priority', width: 80 },
   {
-    title: t('common.actions'), key: 'actions', width: 100,
-    render: (row) => h(NButton, { size: 'small', type: 'error', onClick: () => handleDeleteRoute(row.id) }, { default: () => t('common.delete') }),
+    title: t('common.actions'), key: 'actions', width: 160,
+    render: (row) => h(NSpace, { size: 'small' }, () => [
+      h(NButton, {
+        size: 'small', type: 'primary',
+        loading: testingId.value === row.id,
+        disabled: testingId.value !== null,
+        onClick: () => handleTestRoute(row),
+      }, { default: () => t('models.test') }),
+      h(NButton, {
+        size: 'small', type: 'error',
+        onClick: () => handleDeleteRoute(row.id),
+      }, { default: () => t('common.delete') }),
+    ]),
   },
 ])
 
@@ -151,6 +163,41 @@ async function handleDeleteRoute(id: string) {
     await loadData()
   } catch (e) {
     message.error(t('models.deleteFailed', { error: String(e) }))
+  }
+}
+
+async function handleTestRoute(row: ModelRoute) {
+  testingId.value = row.id
+  const model = row.model_pattern.replace(/\*/g, '4o')
+  const start = performance.now()
+
+  try {
+    const resp = await fetch('http://127.0.0.1:7860/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 5,
+      }),
+    })
+    const elapsed = Math.round(performance.now() - start)
+
+    if (resp.ok) {
+      message.success(t('models.testSuccess', { ms: elapsed }))
+    } else {
+      const text = await resp.text()
+      let detail = `HTTP ${resp.status}`
+      try {
+        const json = JSON.parse(text)
+        if (json.error?.message) detail = json.error.message
+      } catch { /* use default */ }
+      message.error(t('models.testFailed', { error: detail }))
+    }
+  } catch (e) {
+    message.error(t('models.testFailed', { error: String(e) }))
+  } finally {
+    testingId.value = null
   }
 }
 
