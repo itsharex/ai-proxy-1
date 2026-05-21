@@ -1,0 +1,30 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nickelrg/tauri-devtools/main/schemas/tauri.conf.json",
+  "productName": "AI Proxy",
+  "version": "0.1.0",
+  "identifier": "com.aiproxy.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "AI Proxy",
+        "width": 1200,
+        "height": 800,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    }
+  }
+}
