@@ -64,6 +64,7 @@ import {
   DocumentTextOutline,
   StatsChartOutline,
   ShieldCheckmarkOutline,
+  FlaskOutline,
   SettingsOutline,
 } from '@vicons/ionicons5'
 import { invoke } from '@tauri-apps/api/core'
@@ -91,6 +92,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: () => t('nav.rules'), key: '/rules', icon: renderIcon(ShieldCheckmarkOutline) },
   { label: () => t('nav.logs'), key: '/logs', icon: renderIcon(DocumentTextOutline) },
   { label: () => t('nav.statistics'), key: '/statistics', icon: renderIcon(StatsChartOutline) },
+  { label: () => t('nav.test'), key: '/test', icon: renderIcon(FlaskOutline) },
   { label: () => t('nav.settings'), key: '/settings', icon: renderIcon(SettingsOutline) },
 ])
 

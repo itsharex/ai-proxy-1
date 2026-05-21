@@ -13,6 +13,7 @@
     "rules": "Rules",
     "logs": "Logs",
     "statistics": "Statistics",
+    "test": "Test",
     "settings": "Settings"
   },
   "common": {
@@ -165,6 +166,34 @@
     "completionTokens": "Completion Tokens",
     "totalTokens": "Total Tokens",
     "estCost": "Est. Cost"
+  },
+  "test": {
+    "title": "Test Request",
+    "format": "API Format",
+    "model": "Model",
+    "systemPrompt": "System Prompt",
+    "systemPromptPlaceholder": "Optional system prompt",
+    "userMessage": "User Message",
+    "userMessagePlaceholder": "Enter your test message",
+    "temperature": "Temperature",
+    "maxTokens": "Max Tokens",
+    "stream": "Stream",
+    "sendRequest": "Send Request",
+    "sending": "Sending...",
+    "requestPreview": "Request Preview",
+    "response": "Response",
+    "statusCode": "Status Code",
+    "responseTime": "Response Time",
+    "tokenUsage": "Token Usage",
+    "promptTokens": "Prompt Tokens",
+    "completionTokens": "Completion Tokens",
+    "totalTokens": "Total Tokens",
+    "responseBody": "Response Body",
+    "error": "Error",
+    "noResponse": "No response yet. Send a request to test.",
+    "proxyUrl": "Proxy URL",
+    "rawRequest": "Raw Request",
+    "clearResponse": "Clear"
   },
   "settings": {
     "title": "Settings",

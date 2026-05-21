@@ -13,6 +13,7 @@
     "rules": "拦截规则",
     "logs": "请求日志",
     "statistics": "用量统计",
+    "test": "测试",
     "settings": "设置"
   },
   "common": {
@@ -165,6 +166,34 @@
     "completionTokens": "输出 Token",
     "totalTokens": "总 Token",
     "estCost": "预估费用"
+  },
+  "test": {
+    "title": "测试请求",
+    "format": "API 格式",
+    "model": "模型",
+    "systemPrompt": "系统提示",
+    "systemPromptPlaceholder": "可选的系统提示",
+    "userMessage": "用户消息",
+    "userMessagePlaceholder": "输入测试消息",
+    "temperature": "温度",
+    "maxTokens": "最大 Token 数",
+    "stream": "流式输出",
+    "sendRequest": "发送请求",
+    "sending": "发送中...",
+    "requestPreview": "请求预览",
+    "response": "响应",
+    "statusCode": "状态码",
+    "responseTime": "响应时间",
+    "tokenUsage": "Token 用量",
+    "promptTokens": "输入 Token",
+    "completionTokens": "输出 Token",
+    "totalTokens": "总 Token",
+    "responseBody": "响应内容",
+    "error": "错误",
+    "noResponse": "暂无响应。发送请求以开始测试。",
+    "proxyUrl": "代理地址",
+    "rawRequest": "原始请求",
+    "clearResponse": "清除"
   },
   "settings": {
     "title": "设置",
