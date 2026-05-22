@@ -11,6 +11,10 @@ mod server;
 mod ipc;
 
 use tauri::Manager;
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+static APP_RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -47,6 +51,11 @@ pub fn run() {
 
                 server::start_server(&host, port).await;
             });
+
+            {
+                let mut guard = APP_RUNTIME.lock().unwrap();
+                *guard = Some(rt);
+            }
 
             Ok(())
         })
