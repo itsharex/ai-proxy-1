@@ -1,137 +1,160 @@
+<script setup lang="ts">
+import { ref } from "vue";
+import { invoke } from "@tauri-apps/api/core";
+
+const greetMsg = ref("");
+const name = ref("");
+
+async function greet() {
+  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+  greetMsg.value = await invoke("greet", { name: name.value });
+}
+</script>
+
 <template>
-  <n-config-provider :theme="darkTheme">
-    <n-message-provider>
-      <n-layout has-sider style="height: 100vh">
-        <n-layout-sider
-          bordered
-          collapse-mode="width"
-          :collapsed-width="64"
-          :width="220"
-          :collapsed="collapsed"
-          show-trigger
-          @collapse="collapsed = true"
-          @expand="collapsed = false"
-        >
-          <div class="sider-header">
-            <span v-if="!collapsed" class="app-title">{{ t('app.title') }}</span>
-            <span v-else class="app-title-short">AP</span>
-          </div>
-          <n-menu
-            :collapsed="collapsed"
-            :collapsed-width="64"
-            :collapsed-icon-size="22"
-            :options="menuOptions"
-            :value="currentRoute"
-            @update:value="handleMenuSelect"
-          />
-        </n-layout-sider>
-        <n-layout>
-          <n-layout-header bordered style="height: 48px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between">
-            <span style="font-size: 14px; font-weight: 500">{{ currentRouteName }}</span>
-            <n-tag :type="serverRunning ? 'success' : 'error'" size="small" round>
-              {{ serverRunning ? t('app.status.running') : t('app.status.stopped') }}
-            </n-tag>
-          </n-layout-header>
-          <n-layout-content style="padding: 24px; overflow: auto" content-style="height: 100%">
-            <router-view />
-          </n-layout-content>
-        </n-layout>
-      </n-layout>
-    </n-message-provider>
-  </n-config-provider>
+  <main class="container">
+    <h1>Welcome to Tauri + Vue</h1>
+
+    <div class="row">
+      <a href="https://vite.dev" target="_blank">
+        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
+      </a>
+      <a href="https://tauri.app" target="_blank">
+        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
+      </a>
+      <a href="https://vuejs.org/" target="_blank">
+        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
+      </a>
+    </div>
+    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
+
+    <form class="row" @submit.prevent="greet">
+      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
+      <button type="submit">Greet</button>
+    </form>
+    <p>{{ greetMsg }}</p>
+  </main>
 </template>
 
-<script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import {
-  NConfigProvider,
-  NLayout,
-  NLayoutSider,
-  NLayoutHeader,
-  NLayoutContent,
-  NMenu,
-  NTag,
-  NMessageProvider,
-  darkTheme,
-  type MenuOption,
-} from 'naive-ui'
-import {
-  HomeOutline,
-  ServerOutline,
-  GitMergeOutline,
-  DocumentTextOutline,
-  StatsChartOutline,
-  ShieldCheckmarkOutline,
-  FlaskOutline,
-  SettingsOutline,
-} from '@vicons/ionicons5'
-import { invoke } from '@tauri-apps/api/core'
-
-const router = useRouter()
-const route = useRoute()
-const { t } = useI18n()
-const collapsed = ref(false)
-const serverRunning = ref(false)
-
-const currentRoute = computed(() => route.path)
-const currentRouteName = computed(() => {
-  const name = String(route.name || 'Dashboard').toLowerCase()
-  return t(`nav.${name}`)
-})
-
-function renderIcon(icon: unknown) {
-  return () => h(icon as Parameters<typeof h>[0], { size: 20 })
+<style scoped>
+.logo.vite:hover {
+  filter: drop-shadow(0 0 2em #747bff);
 }
 
-const menuOptions = computed<MenuOption[]>(() => [
-  { label: () => t('nav.dashboard'), key: '/', icon: renderIcon(HomeOutline) },
-  { label: () => t('nav.providers'), key: '/providers', icon: renderIcon(ServerOutline) },
-  { label: () => t('nav.models'), key: '/models', icon: renderIcon(GitMergeOutline) },
-  { label: () => t('nav.rules'), key: '/rules', icon: renderIcon(ShieldCheckmarkOutline) },
-  { label: () => t('nav.logs'), key: '/logs', icon: renderIcon(DocumentTextOutline) },
-  { label: () => t('nav.statistics'), key: '/statistics', icon: renderIcon(StatsChartOutline) },
-  { label: () => t('nav.test'), key: '/test', icon: renderIcon(FlaskOutline) },
-  { label: () => t('nav.settings'), key: '/settings', icon: renderIcon(SettingsOutline) },
-])
-
-function handleMenuSelect(key: string) {
-  router.push(key)
+.logo.vue:hover {
+  filter: drop-shadow(0 0 2em #249b73);
 }
 
-async function checkServerStatus() {
-  try {
-    await invoke('get_providers')
-    serverRunning.value = true
-  } catch {
-    serverRunning.value = false
+</style>
+<style>
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 400;
+
+  color: #0f0f0f;
+  background-color: #f6f6f6;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+.container {
+  margin: 0;
+  padding-top: 10vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: 0.75s;
+}
+
+.logo.tauri:hover {
+  filter: drop-shadow(0 0 2em #24c8db);
+}
+
+.row {
+  display: flex;
+  justify-content: center;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+
+a:hover {
+  color: #535bf2;
+}
+
+h1 {
+  text-align: center;
+}
+
+input,
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  color: #0f0f0f;
+  background-color: #ffffff;
+  transition: border-color 0.25s;
+  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #396cd8;
+}
+button:active {
+  border-color: #396cd8;
+  background-color: #e8e8e8;
+}
+
+input,
+button {
+  outline: none;
+}
+
+#greet-input {
+  margin-right: 5px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #f6f6f6;
+    background-color: #2f2f2f;
+  }
+
+  a:hover {
+    color: #24c8db;
+  }
+
+  input,
+  button {
+    color: #ffffff;
+    background-color: #0f0f0f98;
+  }
+  button:active {
+    background-color: #0f0f0f69;
   }
 }
 
-onMounted(() => {
-  checkServerStatus()
-  setInterval(checkServerStatus, 10000)
-})
-</script>
-
-<style scoped>
-.sider-header {
-  height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid var(--n-border-color);
-}
-
-.app-title {
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-}
-
-.app-title-short {
-  font-size: 16px;
-  font-weight: 700;
-}
 </style>
