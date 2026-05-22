@@ -1,4 +1,4 @@
-mod converter;
+pub mod converter;
 mod db;
 mod error;
 mod provider;
