@@ -102,6 +102,7 @@ pub enum ClientFormat {
 }
 
 impl ClientFormat {
+    #[allow(dead_code)]
     pub fn from_path(path: &str) -> Option<Self> {
         if path.contains("/v1/chat/completions") {
             Some(Self::Completions)

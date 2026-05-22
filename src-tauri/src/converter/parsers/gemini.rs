@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::converter::ir::{
     IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage,
+    IrToolCall, IrUsage,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
