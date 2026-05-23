@@ -290,7 +290,6 @@ async fn handle_proxy(
         response
     } else {
         let target_parser = get_parser(&route.target_format);
-        let generator_clone = get_generator(&client_format);
 
         let stream = resp.bytes_stream();
 
@@ -298,14 +297,33 @@ async fn handle_proxy(
         let model_name = ir_request.model.clone();
 
         let sse_stream = async_stream::stream! {
-            if let Some(start_data) = generator_clone.generate_stream_start(&response_id, &model_name) {
-                yield Ok::<_, std::convert::Infallible>(Bytes::from(start_data));
-            }
-
             let mut buffer = String::new();
             let mut total_prompt = 0u32;
             let mut total_completion = 0u32;
             let mut reader = stream;
+
+            // State machine for Responses SSE events
+            let mut output_index: usize = 0;
+            let mut text_item_open = false;
+            let mut func_call_open = false;
+            let mut finished = false;
+            let mut current_call_id = String::new();
+            let mut current_func_name = String::new();
+            let mut accumulated_text = String::new();
+            let mut accumulated_args = String::new();
+
+            // Emit response.created
+            let created = serde_json::json!({
+                "type": "response.created",
+                "response": {
+                    "id": response_id,
+                    "object": "response",
+                    "status": "in_progress",
+                    "model": model_name,
+                    "output": [],
+                }
+            });
+            yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", created)));
 
             while let Some(chunk_result) = reader.next().await {
                 let chunk = match chunk_result {
@@ -327,28 +345,223 @@ async fn handle_proxy(
                         continue;
                     }
 
-                    match target_parser.parse_stream_chunk(trimmed) {
-                        Ok(Some(ir_chunk)) => {
-                            if let Some(usage) = &ir_chunk.usage {
-                                total_prompt += usage.prompt_tokens;
-                                total_completion += usage.completion_tokens;
-                            }
-
-                            let client_sse = generator_clone.generate_stream_chunk(&ir_chunk);
-                            if !client_sse.is_empty() {
-                                yield Ok::<_, std::convert::Infallible>(Bytes::from(client_sse));
-                            }
-                        }
-                        Ok(None) => {}
+                    let ir_chunk = match target_parser.parse_stream_chunk(trimmed) {
+                        Ok(Some(c)) => c,
+                        Ok(None) => continue,
                         Err(e) => {
                             error!("Stream chunk parse error: {}", e);
+                            continue;
                         }
+                    };
+
+                    if let Some(usage) = &ir_chunk.usage {
+                        total_prompt += usage.prompt_tokens;
+                        total_completion += usage.completion_tokens;
+                    }
+
+                    // Handle tool call deltas
+                    if let Some(tool_calls) = &ir_chunk.delta_tool_calls {
+                        if let Some(tc) = tool_calls.first() {
+                            // New tool call: close text item first, then open function_call
+                            if tc.id.is_some() && tc.name.is_some() {
+                                if text_item_open {
+                                    let text_done = serde_json::json!({
+                                        "type": "response.output_text.done",
+                                        "output_index": output_index - 1,
+                                        "content_index": 0,
+                                        "text": accumulated_text,
+                                    });
+                                    let item_done = serde_json::json!({
+                                        "type": "response.output_item.done",
+                                        "output_index": output_index - 1,
+                                        "item": {
+                                            "type": "message",
+                                            "id": "msg_proxy",
+                                            "role": "assistant",
+                                            "content": [{"type": "output_text", "text": accumulated_text}],
+                                            "status": "completed",
+                                        }
+                                    });
+                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                        format!("data: {}\n\ndata: {}\n\n", text_done, item_done)
+                                    ));
+                                    text_item_open = false;
+                                    accumulated_text.clear();
+                                }
+
+                                current_call_id = tc.id.as_deref().unwrap_or("").to_string();
+                                current_func_name = tc.name.as_deref().unwrap_or("").to_string();
+                                let added = serde_json::json!({
+                                    "type": "response.output_item.added",
+                                    "output_index": output_index,
+                                    "item": {
+                                        "type": "function_call",
+                                        "id": format!("fc_{}", current_call_id),
+                                        "call_id": current_call_id,
+                                        "name": current_func_name,
+                                        "arguments": "",
+                                    }
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", added)));
+                                func_call_open = true;
+                                output_index += 1;
+                            }
+                            // Arguments delta
+                            if let Some(args) = &tc.arguments {
+                                accumulated_args.push_str(args);
+                                let delta_event = serde_json::json!({
+                                    "type": "response.function_call_arguments.delta",
+                                    "output_index": output_index - 1,
+                                    "item_id": format!("fc_{}", current_call_id),
+                                    "call_id": current_call_id,
+                                    "delta": args,
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", delta_event)));
+                            }
+                        }
+                    }
+
+                    // Handle text content
+                    if let Some(content) = &ir_chunk.delta_content {
+                        if content.is_empty() || func_call_open || finished {
+                            // skip
+                        } else {
+                            if !text_item_open {
+                                let item_added = serde_json::json!({
+                                    "type": "response.output_item.added",
+                                    "output_index": output_index,
+                                    "item": {
+                                        "type": "message",
+                                        "id": "msg_proxy",
+                                        "role": "assistant",
+                                        "content": [],
+                                        "status": "in_progress",
+                                    }
+                                });
+                                let part_added = serde_json::json!({
+                                    "type": "response.content_part.added",
+                                    "output_index": output_index,
+                                    "content_index": 0,
+                                    "part": {"type": "output_text", "text": ""},
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\ndata: {}\n\n", item_added, part_added)
+                                ));
+                                text_item_open = true;
+                                output_index += 1;
+                            }
+                            accumulated_text.push_str(content);
+                            let delta_event = serde_json::json!({
+                                "type": "response.output_text.delta",
+                                "output_index": output_index - 1,
+                                "content_index": 0,
+                                "delta": content,
+                            });
+                            yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", delta_event)));
+                        }
+                    }
+
+                    // Handle finish
+                    if ir_chunk.finish_reason.is_some() && !finished {
+                        finished = true;
+                        // Close function_call if open
+                        if func_call_open {
+                            let args_done = serde_json::json!({
+                                "type": "response.function_call_arguments.done",
+                                "output_index": output_index - 1,
+                                "item_id": format!("fc_{}", current_call_id),
+                                "call_id": current_call_id,
+                                "arguments": accumulated_args,
+                            });
+                            let fc_done = serde_json::json!({
+                                "type": "response.output_item.done",
+                                "output_index": output_index - 1,
+                                "item": {
+                                    "type": "function_call",
+                                    "id": format!("fc_{}", current_call_id),
+                                    "call_id": current_call_id,
+                                    "name": current_func_name,
+                                    "arguments": accumulated_args,
+                                }
+                            });
+                            yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                format!("data: {}\n\ndata: {}\n\n", args_done, fc_done)
+                            ));
+                            func_call_open = false;
+                        }
+                        // Close text message if open
+                        if text_item_open {
+                            let text_done = serde_json::json!({
+                                "type": "response.output_text.done",
+                                "output_index": output_index - 1,
+                                "content_index": 0,
+                                "text": accumulated_text,
+                            });
+                            let item_done = serde_json::json!({
+                                "type": "response.output_item.done",
+                                "output_index": output_index - 1,
+                                "item": {
+                                    "type": "message",
+                                    "id": "msg_proxy",
+                                    "role": "assistant",
+                                    "content": [{"type": "output_text", "text": accumulated_text}],
+                                    "status": "completed",
+                                }
+                            });
+                            yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                format!("data: {}\n\ndata: {}\n\n", text_done, item_done)
+                            ));
+                            text_item_open = false;
+                        }
+                        // response.completed
+                        let completed = serde_json::json!({
+                            "type": "response.completed",
+                            "response": {
+                                "id": ir_chunk.id.as_deref().unwrap_or(&response_id),
+                                "object": "response",
+                                "status": "completed",
+                                "output": [],
+                            }
+                        });
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", completed)));
                     }
                 }
             }
 
-            if let Some(end_data) = generator_clone.generate_stream_end() {
-                yield Ok::<_, std::convert::Infallible>(Bytes::from(end_data));
+            // Safety: close any remaining open items if stream ended without finish_reason
+            if func_call_open {
+                let fc_done = serde_json::json!({
+                    "type": "response.output_item.done",
+                    "output_index": output_index - 1,
+                    "item": {
+                        "type": "function_call",
+                        "id": format!("fc_{}", current_call_id),
+                        "call_id": current_call_id,
+                        "name": current_func_name,
+                        "arguments": accumulated_args,
+                    }
+                });
+                yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\n", fc_done)));
+            }
+            if text_item_open {
+                let text_done = serde_json::json!({
+                    "type": "response.output_text.done",
+                    "output_index": output_index - 1,
+                    "content_index": 0,
+                    "text": accumulated_text,
+                });
+                let item_done = serde_json::json!({
+                    "type": "response.output_item.done",
+                    "output_index": output_index - 1,
+                    "item": {
+                        "type": "message",
+                        "id": "msg_proxy",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": accumulated_text}],
+                        "status": "completed",
+                    }
+                });
+                yield Ok::<_, std::convert::Infallible>(Bytes::from(format!("data: {}\n\ndata: {}\n\n", text_done, item_done)));
             }
 
             let elapsed = start.elapsed().as_millis() as i64;
