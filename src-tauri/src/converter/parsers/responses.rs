@@ -372,12 +372,12 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
             Ok(Some(IrMessage {
                 role: IrRole::Tool,
                 content: vec![IrContentPart::ToolResult {
-                    tool_use_id: call_id,
+                    tool_use_id: call_id.clone(),
                     content: output,
                     tool_name: None,
                 }],
                 name: None,
-                tool_call_id: None,
+                tool_call_id: Some(call_id),
                 tool_calls: None,
             }))
         }

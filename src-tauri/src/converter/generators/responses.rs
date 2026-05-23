@@ -167,6 +167,26 @@ impl FormatGenerator for ResponsesGenerator {
         }
 
         if let Some(_reason) = &chunk.finish_reason {
+            let text_done = json!({
+                "type": "response.output_text.done",
+                "output_index": 0,
+                "content_index": 0,
+                "text": "",
+            });
+            let item_done = json!({
+                "type": "response.output_item.done",
+                "output_index": 0,
+                "item": {
+                    "type": "message",
+                    "id": "msg_proxy",
+                    "role": "assistant",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "",
+                    }],
+                    "status": "completed",
+                }
+            });
             let completed = json!({
                 "type": "response.completed",
                 "response": {
@@ -176,7 +196,7 @@ impl FormatGenerator for ResponsesGenerator {
                     "output": [],
                 }
             });
-            return format!("data: {}\n\n", completed);
+            return format!("data: {}\n\ndata: {}\n\ndata: {}\n\n", text_done, item_done, completed);
         }
 
         if let Some(content) = &chunk.delta_content {
@@ -192,7 +212,7 @@ impl FormatGenerator for ResponsesGenerator {
     }
 
     fn generate_stream_start(&self, response_id: &str, model: &str) -> Option<String> {
-        let event = json!({
+        let created = json!({
             "type": "response.created",
             "response": {
                 "id": response_id,
@@ -202,7 +222,27 @@ impl FormatGenerator for ResponsesGenerator {
                 "output": [],
             }
         });
-        Some(format!("data: {}\n\n", event))
+        let item_added = json!({
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {
+                "type": "message",
+                "id": "msg_proxy",
+                "role": "assistant",
+                "content": [],
+                "status": "in_progress",
+            }
+        });
+        let content_added = json!({
+            "type": "response.content_part.added",
+            "output_index": 0,
+            "content_index": 0,
+            "part": {
+                "type": "output_text",
+                "text": "",
+            }
+        });
+        Some(format!("data: {}\n\ndata: {}\n\ndata: {}\n\n", created, item_added, content_added))
     }
 
     fn generate_response(&self, ir: &IrResponse) -> Result<Value, ProxyError> {

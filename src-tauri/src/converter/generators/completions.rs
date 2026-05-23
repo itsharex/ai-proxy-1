@@ -15,7 +15,7 @@ impl FormatGenerator for CompletionsGenerator {
             let mut message = json!({
                 "role": match msg.role {
                     IrRole::System => "system",
-                    IrRole::Developer => "developer",
+                    IrRole::Developer => "system",
                     IrRole::User => "user",
                     IrRole::Assistant => "assistant",
                     IrRole::Tool => "tool",
@@ -94,7 +94,30 @@ impl FormatGenerator for CompletionsGenerator {
         }
 
         if let Some(tool_choice) = &ir.tool_choice {
-            body["tool_choice"] = tool_choice.clone();
+            let converted = match tool_choice {
+                Value::String(s) => json!(s),
+                Value::Object(map) => {
+                    if let Some(t) = map.get("type").and_then(|v| v.as_str()) {
+                        match t {
+                            "auto" => json!("auto"),
+                            "required" => json!("required"),
+                            "none" => json!("none"),
+                            "function" => {
+                                if let Some(name) = map.get("function").and_then(|f| f.get("name")).and_then(|n| n.as_str()) {
+                                    json!({ "type": "function", "function": { "name": name } })
+                                } else {
+                                    json!("auto")
+                                }
+                            }
+                            _ => json!("auto"),
+                        }
+                    } else {
+                        tool_choice.clone()
+                    }
+                }
+                _ => json!("auto"),
+            };
+            body["tool_choice"] = converted;
         }
 
         if let Some(temperature) = ir.temperature {
@@ -133,16 +156,7 @@ impl FormatGenerator for CompletionsGenerator {
             body["seed"] = json!(seed);
         }
 
-        if let Some(thinking) = &ir.thinking {
-            if thinking.enabled {
-                if let Some(budget) = thinking.budget_tokens {
-                    let effort = if budget <= 5000 { "low" }
-                        else if budget <= 15000 { "medium" }
-                        else { "high" };
-                    body["reasoning"] = json!({ "effort": effort });
-                }
-            }
-        }
+        // Skip reasoning/thinking for providers that don't support it
 
         Ok(body)
     }

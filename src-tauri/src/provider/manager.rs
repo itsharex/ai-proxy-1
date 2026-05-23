@@ -100,7 +100,7 @@ impl ProviderManager {
 
         let matched: DbProviderModel = sqlx::query_as(
             "SELECT id, provider_id, model_name, target_model, enabled, created_at
-             FROM provider_models WHERE model_name = ? AND enabled = 1 LIMIT 1",
+             FROM provider_models WHERE model_name = ? COLLATE NOCASE AND enabled = 1 LIMIT 1",
         )
         .bind(model)
         .fetch_one(pool)
