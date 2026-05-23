@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::converter::ir::{
     IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage,
+    IrToolCall, IrToolCallDelta, IrUsage, IrThinkingConfig,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -72,6 +72,7 @@ impl FormatParser for AnthropicParser {
                             .get("input_schema")
                             .cloned()
                             .unwrap_or(Value::Object(serde_json::Map::new())),
+                        strict: None,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -79,6 +80,7 @@ impl FormatParser for AnthropicParser {
 
         let temperature = body["temperature"].as_f64().map(|v| v as f32);
         let top_p = body["top_p"].as_f64().map(|v| v as f32);
+        let top_k = body["top_k"].as_u64().map(|v| v as u32);
         let max_tokens = body["max_tokens"].as_u64().map(|v| v as u32);
         let stream = body["stream"].as_bool().unwrap_or(false);
 
@@ -91,6 +93,22 @@ impl FormatParser for AnthropicParser {
         let tool_choice = body.get("tool_choice").cloned();
         let response_format = body.get("response_format").cloned();
 
+        let thinking = body.get("thinking").and_then(|t| {
+            let enabled = t["type"].as_str() == Some("enabled");
+            Some(IrThinkingConfig {
+                enabled,
+                budget_tokens: t.get("budget_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+            })
+        });
+
+        let mut extra = std::collections::HashMap::new();
+        if body.get("cache_control").is_some() {
+            extra.insert("has_cache_control".into(), Value::Bool(true));
+        }
+        if let Some(meta) = body.get("metadata") {
+            extra.insert("metadata".into(), meta.clone());
+        }
+
         Ok(IrRequest {
             model,
             messages,
@@ -98,11 +116,17 @@ impl FormatParser for AnthropicParser {
             tool_choice,
             temperature,
             top_p,
+            top_k,
             max_tokens,
             stream,
             stop_sequences,
             response_format,
+            presence_penalty: None,
+            frequency_penalty: None,
+            seed: None,
+            thinking,
             metadata: std::collections::HashMap::new(),
+            extra,
         })
     }
 
@@ -137,6 +161,7 @@ impl FormatParser for AnthropicParser {
                             model: None,
                             delta_content: Some(text.to_string()),
                             delta_tool_calls: None,
+                            delta_thinking: None,
                             finish_reason: None,
                             usage: None,
                         }))
@@ -154,6 +179,19 @@ impl FormatParser for AnthropicParser {
                                 name: None,
                                 arguments: Some(partial_json.to_string()),
                             }]),
+                            delta_thinking: None,
+                            finish_reason: None,
+                            usage: None,
+                        }))
+                    }
+                    "thinking_delta" => {
+                        let text = delta["thinking"].as_str().unwrap_or("");
+                        Ok(Some(IrStreamChunk {
+                            id: None,
+                            model: None,
+                            delta_content: None,
+                            delta_tool_calls: None,
+                            delta_thinking: Some(text.to_string()),
                             finish_reason: None,
                             usage: None,
                         }))
@@ -180,9 +218,14 @@ impl FormatParser for AnthropicParser {
                             name: Some(name),
                             arguments: None,
                         }]),
+                        delta_thinking: None,
                         finish_reason: None,
                         usage: None,
                     }));
+                }
+
+                if block_type == "thinking" {
+                    return Ok(None);
                 }
 
                 Ok(None)
@@ -204,6 +247,7 @@ impl FormatParser for AnthropicParser {
                     model: None,
                     delta_content: None,
                     delta_tool_calls: None,
+                    delta_thinking: None,
                     finish_reason: stop_reason,
                     usage,
                 }))
@@ -226,6 +270,7 @@ impl FormatParser for AnthropicParser {
                     model,
                     delta_content: None,
                     delta_tool_calls: None,
+                    delta_thinking: None,
                     finish_reason: None,
                     usage,
                 }))
@@ -235,6 +280,7 @@ impl FormatParser for AnthropicParser {
                 model: None,
                 delta_content: None,
                 delta_tool_calls: None,
+                delta_thinking: None,
                 finish_reason: Some("stop".to_string()),
                 usage: None,
             })),
@@ -259,6 +305,13 @@ impl FormatParser for AnthropicParser {
                     "text" => {
                         if let Some(text) = block["text"].as_str() {
                             content_parts.push(IrContentPart::Text {
+                                text: text.to_string(),
+                            });
+                        }
+                    }
+                    "thinking" => {
+                        if let Some(text) = block["thinking"].as_str() {
+                            content_parts.push(IrContentPart::Thinking {
                                 text: text.to_string(),
                             });
                         }
@@ -361,6 +414,13 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
                             });
                         }
                     }
+                    "thinking" => {
+                        if let Some(text) = part["thinking"].as_str() {
+                            content_parts.push(IrContentPart::Thinking {
+                                text: text.to_string(),
+                            });
+                        }
+                    }
                     "image" => {
                         let source = &part["source"];
                         let source_type = source["type"].as_str().unwrap_or("");
@@ -420,6 +480,7 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
                         content_parts.push(IrContentPart::ToolResult {
                             tool_use_id,
                             content: result_content,
+                            tool_name: None,
                         });
                     }
                     _ => {}

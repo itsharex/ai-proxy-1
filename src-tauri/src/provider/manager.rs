@@ -1,48 +1,41 @@
-use serde::Deserialize;
-use sqlx::FromRow;
-use tracing::info;
-
 use crate::converter::ir::ClientFormat;
 use crate::db::get_pool;
-use crate::error::ProxyError;
-use crate::provider::endpoint::{ApiKeyInfo, Provider, ProviderEndpoint};
+use serde::{Deserialize, Serialize};
+use tracing::info;
 
-#[derive(Debug, Clone)]
+use super::endpoint::{ApiKeyInfo, Provider, ProviderModel};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolvedRoute {
     pub provider_id: String,
     pub provider_name: String,
     pub base_url: String,
-    pub auth_type: String,
-    pub auth_header: String,
     pub target_format: ClientFormat,
     pub target_model: String,
     pub endpoint_path: String,
-    #[allow(dead_code)]
-    pub fallback_provider_id: Option<String>,
 }
 
-#[derive(Debug, FromRow, Deserialize)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct DbProvider {
     id: String,
     name: String,
     base_url: String,
-    auth_type: String,
-    auth_header: String,
+    format: String,
 }
 
-#[derive(Debug, FromRow, Deserialize)]
-struct DbEndpoint {
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct DbProviderModel {
     id: String,
     provider_id: String,
-    format: String,
-    path: String,
+    model_name: String,
+    target_model: Option<String>,
+    enabled: i64,
+    created_at: String,
 }
 
-#[derive(Debug, FromRow, Deserialize)]
-#[allow(dead_code)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 struct DbApiKeyInfo {
     id: String,
-    provider_id: String,
     label: String,
     is_active: i64,
     usage_count: i64,
@@ -50,213 +43,148 @@ struct DbApiKeyInfo {
     created_at: String,
 }
 
-#[derive(Debug, FromRow, Deserialize)]
-#[allow(dead_code)]
-struct DbModelRoute {
-    id: String,
-    model_pattern: String,
-    alias: Option<String>,
-    provider_id: String,
-    target_model: String,
-    target_format: String,
-    fallback_provider_id: Option<String>,
-    priority: i64,
-}
-
 pub struct ProviderManager;
 
 impl ProviderManager {
-    pub async fn list() -> Result<Vec<Provider>, ProxyError> {
+    pub async fn list() -> Result<Vec<Provider>, crate::error::ProxyError> {
         let pool = get_pool().await;
-
         let db_providers: Vec<DbProvider> =
-            sqlx::query_as("SELECT id, name, base_url, auth_type, auth_header FROM providers ORDER BY name")
+            sqlx::query_as("SELECT id, name, base_url, format FROM providers ORDER BY name")
                 .fetch_all(pool)
-                .await?;
+                .await
+                .map_err(|e| crate::error::ProxyError::Database(e))?;
 
         let mut providers = Vec::new();
-
-        for dbp in db_providers {
-            let endpoints: Vec<DbEndpoint> = sqlx::query_as(
-                "SELECT id, provider_id, format, path FROM endpoints WHERE provider_id = ?",
-            )
-            .bind(&dbp.id)
-            .fetch_all(pool)
-            .await?;
-
-            let keys: Vec<DbApiKeyInfo> = sqlx::query_as(
-                "SELECT id, provider_id, label, is_active, usage_count, last_used_at, created_at FROM api_keys WHERE provider_id = ?",
-            )
-            .bind(&dbp.id)
-            .fetch_all(pool)
-            .await?;
-
+        for p in db_providers {
+            let models = Self::fetch_models(&p.id).await?;
+            let api_keys = Self::fetch_api_keys_info(&p.id).await?;
             providers.push(Provider {
-                id: dbp.id,
-                name: dbp.name,
-                base_url: dbp.base_url,
-                auth_type: dbp.auth_type,
-                auth_header: dbp.auth_header,
-                endpoints: endpoints
-                    .into_iter()
-                    .map(|e| ProviderEndpoint {
-                        id: e.id,
-                        provider_id: e.provider_id,
-                        format: e.format,
-                        path: e.path,
-                    })
-                    .collect(),
-                api_keys: keys
-                    .into_iter()
-                    .map(|k| ApiKeyInfo {
-                        id: k.id,
-                        label: k.label,
-                        is_active: k.is_active != 0,
-                        usage_count: k.usage_count,
-                        last_used_at: k.last_used_at,
-                        created_at: k.created_at,
-                    })
-                    .collect(),
+                id: p.id,
+                name: p.name,
+                base_url: p.base_url,
+                format: p.format,
+                models,
+                api_keys,
             });
         }
-
         Ok(providers)
     }
 
-    pub async fn find_for_model(model: &str) -> Result<ResolvedRoute, ProxyError> {
-        let pool = get_pool().await;
-
-        let routes: Vec<DbModelRoute> = sqlx::query_as(
-            "SELECT id, model_pattern, alias, provider_id, target_model, target_format, fallback_provider_id, priority FROM model_routes ORDER BY priority DESC",
-        )
-        .fetch_all(pool)
-        .await?;
-
-        let matched_route = routes
-            .iter()
-            .find(|r| model_matches_pattern(model, &r.model_pattern));
-
-        let route = matched_route
-            .ok_or_else(|| ProxyError::ModelNotFound(format!("no route found for model: {}", model)))?;
-
-        let db_provider: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, auth_type, auth_header FROM providers WHERE id = ?",
-        )
-        .bind(&route.provider_id)
-        .fetch_one(pool)
-        .await
-        .map_err(|_| {
-            ProxyError::Provider(format!("provider not found: {}", route.provider_id))
-        })?;
-
-        let target_format = parse_client_format(&route.target_format)?;
-
-        let endpoint: Option<DbEndpoint> = sqlx::query_as(
-            "SELECT id, provider_id, format, path FROM endpoints WHERE provider_id = ? AND format = ? LIMIT 1",
-        )
-        .bind(&db_provider.id)
-        .bind(&route.target_format)
-        .fetch_optional(pool)
-        .await?;
-
-        let endpoint_path = endpoint
-            .map(|e| e.path)
-            .unwrap_or_else(|| default_path_for_format(&target_format, &route.target_model));
-
-        info!(
-            "Resolved model '{}' -> provider '{}' format '{}' endpoint '{}'",
-            model, db_provider.name, route.target_format, endpoint_path
-        );
-
-        Ok(ResolvedRoute {
-            provider_id: db_provider.id,
-            provider_name: db_provider.name,
-            base_url: db_provider.base_url,
-            auth_type: db_provider.auth_type,
-            auth_header: db_provider.auth_header,
-            target_format,
-            target_model: route.target_model.clone(),
-            endpoint_path,
-            fallback_provider_id: route.fallback_provider_id.clone(),
-        })
-    }
-
     #[allow(dead_code)]
-    pub async fn get_by_id(provider_id: &str) -> Result<Provider, ProxyError> {
+    pub async fn get_by_id(provider_id: &str) -> Result<Provider, crate::error::ProxyError> {
         let pool = get_pool().await;
-
-        let dbp: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, auth_type, auth_header FROM providers WHERE id = ?",
+        let p: DbProvider = sqlx::query_as(
+            "SELECT id, name, base_url, format FROM providers WHERE id = ?",
         )
         .bind(provider_id)
         .fetch_one(pool)
         .await
-        .map_err(|_| ProxyError::Provider(format!("provider not found: {}", provider_id)))?;
+        .map_err(|e| crate::error::ProxyError::Database(e))?;
 
-        let endpoints: Vec<DbEndpoint> = sqlx::query_as(
-            "SELECT id, provider_id, format, path FROM endpoints WHERE provider_id = ?",
-        )
-        .bind(provider_id)
-        .fetch_all(pool)
-        .await?;
-
-        let keys: Vec<DbApiKeyInfo> = sqlx::query_as(
-            "SELECT id, provider_id, label, is_active, usage_count, last_used_at, created_at FROM api_keys WHERE provider_id = ?",
-        )
-        .bind(provider_id)
-        .fetch_all(pool)
-        .await?;
+        let models = Self::fetch_models(&p.id).await?;
+        let api_keys = Self::fetch_api_keys_info(&p.id).await?;
 
         Ok(Provider {
-            id: dbp.id,
-            name: dbp.name,
-            base_url: dbp.base_url,
-            auth_type: dbp.auth_type,
-            auth_header: dbp.auth_header,
-            endpoints: endpoints
-                .into_iter()
-                .map(|e| ProviderEndpoint {
-                    id: e.id,
-                    provider_id: e.provider_id,
-                    format: e.format,
-                    path: e.path,
-                })
-                .collect(),
-            api_keys: keys
-                .into_iter()
-                .map(|k| ApiKeyInfo {
-                    id: k.id,
-                    label: k.label,
-                    is_active: k.is_active != 0,
-                    usage_count: k.usage_count,
-                    last_used_at: k.last_used_at,
-                    created_at: k.created_at,
-                })
-                .collect(),
+            id: p.id,
+            name: p.name,
+            base_url: p.base_url,
+            format: p.format,
+            models,
+            api_keys,
         })
     }
+
+    pub async fn find_for_model(model: &str) -> Result<ResolvedRoute, crate::error::ProxyError> {
+        let pool = get_pool().await;
+        info!("Looking up route for model: {}", model);
+
+        let matched: DbProviderModel = sqlx::query_as(
+            "SELECT id, provider_id, model_name, target_model, enabled, created_at
+             FROM provider_models WHERE model_name = ? AND enabled = 1 LIMIT 1",
+        )
+        .bind(model)
+        .fetch_one(pool)
+        .await
+        .map_err(|_| crate::error::ProxyError::Routing(
+            format!("no provider found for model '{}'", model)
+        ))?;
+
+        let pool = get_pool().await;
+        let provider: DbProvider = sqlx::query_as(
+            "SELECT id, name, base_url, format FROM providers WHERE id = ?",
+        )
+        .bind(&matched.provider_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| crate::error::ProxyError::Database(e))?;
+
+        let target_model = matched.target_model.clone()
+            .unwrap_or_else(|| matched.model_name.clone());
+        let target_format = parse_client_format(&provider.format)?;
+        let endpoint_path = default_path_for_format(&target_format, &target_model);
+
+        info!("Route resolved: {} -> {} ({}) via {}", model, target_model, provider.format, provider.name);
+
+        Ok(ResolvedRoute {
+            provider_id: provider.id,
+            provider_name: provider.name,
+            base_url: provider.base_url,
+            target_format,
+            target_model,
+            endpoint_path,
+        })
+    }
+
+    async fn fetch_models(provider_id: &str) -> Result<Vec<ProviderModel>, crate::error::ProxyError> {
+        let pool = get_pool().await;
+        let rows: Vec<DbProviderModel> = sqlx::query_as(
+            "SELECT id, provider_id, model_name, target_model, enabled, created_at
+             FROM provider_models WHERE provider_id = ? ORDER BY model_name",
+        )
+        .bind(provider_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| crate::error::ProxyError::Database(e))?;
+
+        Ok(rows.into_iter().map(|r| ProviderModel {
+            id: r.id,
+            provider_id: r.provider_id,
+            model_name: r.model_name,
+            target_model: r.target_model,
+            enabled: r.enabled != 0,
+            created_at: r.created_at,
+        }).collect())
+    }
+
+    async fn fetch_api_keys_info(provider_id: &str) -> Result<Vec<ApiKeyInfo>, crate::error::ProxyError> {
+        let pool = get_pool().await;
+        let rows: Vec<DbApiKeyInfo> = sqlx::query_as(
+            "SELECT id, label, is_active, usage_count, last_used_at, created_at
+             FROM api_keys WHERE provider_id = ? ORDER BY created_at",
+        )
+        .bind(provider_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| crate::error::ProxyError::Database(e))?;
+
+        Ok(rows.into_iter().map(|r| ApiKeyInfo {
+            id: r.id,
+            label: r.label,
+            is_active: r.is_active != 0,
+            usage_count: r.usage_count as u32,
+            last_used_at: r.last_used_at,
+            created_at: r.created_at,
+        }).collect())
+    }
 }
 
-fn model_matches_pattern(model: &str, pattern: &str) -> bool {
-    if pattern == "*" || pattern == model {
-        return true;
-    }
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return model.starts_with(prefix);
-    }
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        return model.ends_with(suffix);
-    }
-    false
-}
-
-fn parse_client_format(format: &str) -> Result<ClientFormat, ProxyError> {
+fn parse_client_format(format: &str) -> Result<ClientFormat, crate::error::ProxyError> {
     match format {
         "completions" => Ok(ClientFormat::Completions),
         "responses" => Ok(ClientFormat::Responses),
         "anthropic" => Ok(ClientFormat::Anthropic),
         "gemini" => Ok(ClientFormat::Gemini),
-        other => Err(ProxyError::Config(format!(
+        other => Err(crate::error::ProxyError::Config(format!(
             "unknown target format: {}",
             other
         ))),

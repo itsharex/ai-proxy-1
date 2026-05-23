@@ -27,6 +27,7 @@ dependencies = [
  "chrono",
  "futures",
  "hostname",
+ "once_cell",
  "reqwest 0.12.28",
  "ring",
  "serde",

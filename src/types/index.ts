@@ -2,17 +2,18 @@ export interface Provider {
   id: string
   name: string
   base_url: string
-  auth_type: string
-  auth_header: string
-  endpoints: ProviderEndpoint[]
+  format: 'completions' | 'responses' | 'anthropic' | 'gemini'
+  models: ProviderModel[]
   api_keys: ApiKeyInfo[]
 }
 
-export interface ProviderEndpoint {
+export interface ProviderModel {
   id: string
   provider_id: string
-  format: 'completions' | 'responses' | 'anthropic' | 'gemini'
-  path: string
+  model_name: string
+  target_model: string | null
+  enabled: boolean
+  created_at: string
 }
 
 export interface ApiKeyInfo {
@@ -24,17 +25,6 @@ export interface ApiKeyInfo {
   created_at: string
 }
 
-export interface ModelRoute {
-  id: string
-  model_pattern: string
-  alias: string | null
-  provider_id: string
-  target_model: string
-  target_format: string
-  fallback_provider_id: string | null
-  priority: number
-}
-
 export interface RequestLog {
   id: number
   request_id: string
@@ -43,8 +33,8 @@ export interface RequestLog {
   provider_format: string
   model: string
   stream: boolean
-  status_code: number
-  duration_ms: number
+  status_code: number | null
+  duration_ms: number | null
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number

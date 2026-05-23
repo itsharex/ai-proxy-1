@@ -29,7 +29,7 @@
     <n-card title="用量汇总">
       <n-data-table
         :columns="summaryColumns"
-        :data="summaries"
+        :data="stats"
         :bordered="false"
         size="small"
       />
@@ -39,12 +39,27 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '../api'
 import * as echarts from 'echarts'
-import type { UsageSummary } from '../types'
+
+interface UsageStat {
+  model: string
+  provider_name: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  cost_estimate: number
+  request_count: number
+}
+
+interface UsageResponse {
+  stats: UsageStat[]
+  total_cost: number
+  total_requests: number
+}
 
 const timeRange = ref<'today' | 'week' | 'month'>('month')
-const summaries = ref<UsageSummary[]>([])
+const stats = ref<UsageStat[]>([])
 
 const lineChartRef = ref<HTMLElement | null>(null)
 const pieChartRef = ref<HTMLElement | null>(null)
@@ -57,27 +72,27 @@ const summaryColumns = [
   { title: '请求次数', key: 'request_count', width: 100 },
   {
     title: 'Prompt Tokens',
-    key: 'total_prompt_tokens',
+    key: 'prompt_tokens',
     width: 140,
-    render: (row: UsageSummary) => row.total_prompt_tokens.toLocaleString(),
+    render: (row: UsageStat) => row.prompt_tokens.toLocaleString(),
   },
   {
     title: 'Completion Tokens',
-    key: 'total_completion_tokens',
+    key: 'completion_tokens',
     width: 160,
-    render: (row: UsageSummary) => row.total_completion_tokens.toLocaleString(),
+    render: (row: UsageStat) => row.completion_tokens.toLocaleString(),
   },
   {
     title: '总 Tokens',
     key: 'total_tokens',
     width: 120,
-    render: (row: UsageSummary) => row.total_tokens.toLocaleString(),
+    render: (row: UsageStat) => row.total_tokens.toLocaleString(),
   },
   {
     title: '费用',
-    key: 'total_cost',
+    key: 'cost_estimate',
     width: 100,
-    render: (row: UsageSummary) => `$${row.total_cost.toFixed(4)}`,
+    render: (row: UsageStat) => `$${row.cost_estimate.toFixed(4)}`,
   },
 ]
 
@@ -89,7 +104,7 @@ function getDaysFromRange(range: 'today' | 'week' | 'month'): number {
   }
 }
 
-function buildLineChartOptions(data: UsageSummary[]) {
+function buildLineChartOptions(data: UsageStat[]) {
   const modelMap = new Map<string, { date: string; tokens: number }[]>()
   data.forEach((item) => {
     if (!modelMap.has(item.model)) {
@@ -123,10 +138,10 @@ function buildLineChartOptions(data: UsageSummary[]) {
   }
 }
 
-function buildPieChartOptions(data: UsageSummary[]) {
+function buildPieChartOptions(data: UsageStat[]) {
   const costData = data.map((item) => ({
     name: item.model,
-    value: Number(item.total_cost.toFixed(4)),
+    value: Number(item.cost_estimate.toFixed(4)),
   }))
 
   return {
@@ -149,7 +164,7 @@ function buildPieChartOptions(data: UsageSummary[]) {
   }
 }
 
-function updateCharts(data: UsageSummary[]) {
+function updateCharts(data: UsageStat[]) {
   if (lineChart) {
     lineChart.setOption(buildLineChartOptions(data))
   }
@@ -161,9 +176,10 @@ function updateCharts(data: UsageSummary[]) {
 async function fetchStats() {
   try {
     const days = getDaysFromRange(timeRange.value)
-    summaries.value = await invoke<UsageSummary[]>('get_usage_stats', { days })
+    const result = await api<UsageResponse>(`/api/usage?days=${days}`)
+    stats.value = result.stats
     await nextTick()
-    updateCharts(summaries.value)
+    updateCharts(stats.value)
   } catch (error) {
     console.error('Failed to load usage stats:', error)
   }
@@ -179,7 +195,6 @@ function handleResize() {
 }
 
 onMounted(async () => {
-  await fetchStats()
   await nextTick()
   if (lineChartRef.value) {
     lineChart = echarts.init(lineChartRef.value)
@@ -187,7 +202,7 @@ onMounted(async () => {
   if (pieChartRef.value) {
     pieChart = echarts.init(pieChartRef.value)
   }
-  updateCharts(summaries.value)
+  await fetchStats()
   window.addEventListener('resize', handleResize)
 })
 

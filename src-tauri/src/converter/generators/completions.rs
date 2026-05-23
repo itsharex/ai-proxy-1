@@ -15,6 +15,7 @@ impl FormatGenerator for CompletionsGenerator {
             let mut message = json!({
                 "role": match msg.role {
                     IrRole::System => "system",
+                    IrRole::Developer => "developer",
                     IrRole::User => "user",
                     IrRole::Assistant => "assistant",
                     IrRole::Tool => "tool",
@@ -73,17 +74,20 @@ impl FormatGenerator for CompletionsGenerator {
             let tool_defs: Vec<Value> = tools
                 .iter()
                 .map(|t| {
-                    let mut tool = json!({
-                        "type": "function",
-                        "function": {
-                            "name": t.name,
-                            "parameters": t.input_schema,
-                        }
+                    let mut func = json!({
+                        "name": t.name,
+                        "parameters": t.input_schema,
                     });
                     if let Some(desc) = &t.description {
-                        tool["function"]["description"] = json!(desc);
+                        func["description"] = json!(desc);
                     }
-                    tool
+                    if let Some(strict) = t.strict {
+                        func["strict"] = json!(strict);
+                    }
+                    json!({
+                        "type": "function",
+                        "function": func,
+                    })
                 })
                 .collect();
             body["tools"] = json!(tool_defs);
@@ -102,7 +106,11 @@ impl FormatGenerator for CompletionsGenerator {
         }
 
         if let Some(max_tokens) = ir.max_tokens {
-            body["max_tokens"] = json!(max_tokens);
+            if ir.thinking.as_ref().map_or(false, |t| t.enabled) {
+                body["max_completion_tokens"] = json!(max_tokens);
+            } else {
+                body["max_tokens"] = json!(max_tokens);
+            }
         }
 
         if let Some(stop) = &ir.stop_sequences {
@@ -111,6 +119,29 @@ impl FormatGenerator for CompletionsGenerator {
 
         if let Some(response_format) = &ir.response_format {
             body["response_format"] = response_format.clone();
+        }
+
+        if let Some(pp) = ir.presence_penalty {
+            body["presence_penalty"] = json!(pp);
+        }
+
+        if let Some(fp) = ir.frequency_penalty {
+            body["frequency_penalty"] = json!(fp);
+        }
+
+        if let Some(seed) = ir.seed {
+            body["seed"] = json!(seed);
+        }
+
+        if let Some(thinking) = &ir.thinking {
+            if thinking.enabled {
+                if let Some(budget) = thinking.budget_tokens {
+                    let effort = if budget <= 5000 { "low" }
+                        else if budget <= 15000 { "medium" }
+                        else { "high" };
+                    body["reasoning"] = json!({ "effort": effort });
+                }
+            }
         }
 
         Ok(body)
@@ -123,6 +154,10 @@ impl FormatGenerator for CompletionsGenerator {
 
         if let Some(content) = &chunk.delta_content {
             delta["content"] = json!(content);
+        }
+
+        if let Some(thinking) = &chunk.delta_thinking {
+            delta["reasoning_content"] = json!(thinking);
         }
 
         if let Some(tool_calls) = &chunk.delta_tool_calls {
@@ -238,6 +273,10 @@ fn serialize_content_parts(parts: &[IrContentPart]) -> Vec<Value> {
                 "type": "text",
                 "text": text,
             }),
+            IrContentPart::Thinking { text } => json!({
+                "type": "text",
+                "text": text,
+            }),
             IrContentPart::Image { url, data, media_type } => {
                 if let Some(image_url) = url {
                     json!({
@@ -264,7 +303,7 @@ fn serialize_content_parts(parts: &[IrContentPart]) -> Vec<Value> {
                     "arguments": input.to_string(),
                 },
             }),
-            IrContentPart::ToolResult { tool_use_id, content } => json!({
+            IrContentPart::ToolResult { tool_use_id, content, .. } => json!({
                 "type": "function",
                 "tool_call_id": tool_use_id,
                 "content": content,

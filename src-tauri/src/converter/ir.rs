@@ -10,11 +10,23 @@ pub struct IrRequest {
     pub tool_choice: Option<Value>,
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
+    pub top_k: Option<u32>,
     pub max_tokens: Option<u32>,
     pub stream: bool,
     pub stop_sequences: Option<Vec<String>>,
     pub response_format: Option<Value>,
+    pub presence_penalty: Option<f32>,
+    pub frequency_penalty: Option<f32>,
+    pub seed: Option<u64>,
+    pub thinking: Option<IrThinkingConfig>,
     pub metadata: HashMap<String, Value>,
+    pub extra: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IrThinkingConfig {
+    pub enabled: bool,
+    pub budget_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,6 +42,7 @@ pub struct IrMessage {
 #[serde(rename_all = "lowercase")]
 pub enum IrRole {
     System,
+    Developer,
     User,
     Assistant,
     Tool,
@@ -39,9 +52,10 @@ pub enum IrRole {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IrContentPart {
     Text { text: String },
+    Thinking { text: String },
     Image { url: Option<String>, data: Option<String>, media_type: Option<String> },
     ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String },
+    ToolResult { tool_use_id: String, content: String, tool_name: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +63,7 @@ pub struct IrTool {
     pub name: String,
     pub description: Option<String>,
     pub input_schema: Value,
+    pub strict: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +79,7 @@ pub struct IrStreamChunk {
     pub model: Option<String>,
     pub delta_content: Option<String>,
     pub delta_tool_calls: Option<Vec<IrToolCallDelta>>,
+    pub delta_thinking: Option<String>,
     pub finish_reason: Option<String>,
     pub usage: Option<IrUsage>,
 }

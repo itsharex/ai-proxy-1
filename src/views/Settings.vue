@@ -32,11 +32,31 @@
           />
         </n-form-item>
         <n-form-item label="记录请求体">
-          <n-switch v-model:value="settings.logRequestBody" />
+          <n-switch v-model:value="settings.recordRequestBody" />
         </n-form-item>
+
+        <n-divider />
+
         <n-form-item label="代理入口认证">
-          <n-switch v-model:value="settings.requireAuth" />
+          <n-switch v-model:value="settings.proxyAuthEnabled" />
         </n-form-item>
+        <n-form-item v-if="settings.proxyAuthEnabled" label="代理 API Key">
+          <n-input
+            v-model:value="settings.proxyAuthKey"
+            type="password"
+            show-password-on="click"
+            placeholder="设置 Agent 访问代理时使用的 API Key"
+          />
+        </n-form-item>
+        <n-alert
+          v-if="settings.proxyAuthEnabled && !settings.proxyAuthKey"
+          title="请设置 API Key"
+          type="warning"
+          style="margin-bottom: 16px"
+        >
+          启用认证后，Agent 调用代理接口需在请求头携带 <n-text code>Authorization: Bearer &lt;your-key&gt;</n-text>。
+        </n-alert>
+
         <n-form-item>
           <n-space>
             <n-button type="primary" @click="handleSave">
@@ -52,45 +72,68 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
+import { api } from '../api'
 
 const message = useMessage()
-
-const STORAGE_KEY = 'ai-proxy-settings'
 
 interface AppSettings {
   host: string
   port: number
   logRetentionDays: number
-  logRequestBody: boolean
-  requireAuth: boolean
+  recordRequestBody: boolean
+  proxyAuthEnabled: boolean
+  proxyAuthKey: string
 }
 
 const settings = ref<AppSettings>({
   host: '127.0.0.1',
   port: 7860,
   logRetentionDays: 30,
-  logRequestBody: false,
-  requireAuth: false,
+  recordRequestBody: false,
+  proxyAuthEnabled: false,
+  proxyAuthKey: '',
 })
 
-function loadSettings() {
+async function loadSettings() {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored) as Partial<AppSettings>
-      settings.value = {
-        ...settings.value,
-        ...parsed,
-      }
+    const data = await api<{
+      http_host: string
+      http_port: string
+      log_retention_days: string
+      record_request_body: string
+      proxy_auth_enabled: string
+      proxy_auth_key: string
+    }>('/api/settings')
+    settings.value = {
+      host: data.http_host,
+      port: parseInt(data.http_port) || 7860,
+      logRetentionDays: parseInt(data.log_retention_days) || 30,
+      recordRequestBody: data.record_request_body === 'true',
+      proxyAuthEnabled: data.proxy_auth_enabled === 'true',
+      proxyAuthKey: data.proxy_auth_key,
     }
   } catch (error) {
-    console.error('Failed to load settings from localStorage:', error)
+    console.error('Failed to load settings:', error)
   }
 }
 
 async function handleSave() {
+  if (settings.value.proxyAuthEnabled && !settings.value.proxyAuthKey) {
+    message.warning('启用认证后必须设置 API Key')
+    return
+  }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings.value))
+    await api('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        http_host: settings.value.host,
+        http_port: String(settings.value.port),
+        log_retention_days: String(settings.value.logRetentionDays),
+        record_request_body: String(settings.value.recordRequestBody),
+        proxy_auth_enabled: String(settings.value.proxyAuthEnabled),
+        proxy_auth_key: settings.value.proxyAuthKey,
+      }),
+    })
     message.success('设置已保存')
   } catch (error) {
     message.error(`保存失败: ${error}`)

@@ -13,7 +13,7 @@
       </n-gi>
       <n-gi span="4 m:1">
         <n-card>
-          <n-statistic label="模型路由数">
+          <n-statistic label="模型数量">
             <template #prefix>
               <n-icon :component="GitBranchOutline" />
             </template>
@@ -69,8 +69,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h } from 'vue'
+import { ref, h, onMounted } from 'vue'
 import { NTag } from 'naive-ui'
+import { api } from '../api'
+import type { Provider } from '../types'
 import {
   ServerOutline,
   GitBranchOutline,
@@ -85,6 +87,47 @@ const routeCount = ref(0)
 const todayRequests = ref(0)
 const todayTokens = ref(0)
 const recentLogs = ref<Record<string, unknown>[]>([])
+
+interface UsageResponse {
+  stats: Array<{
+    model: string
+    provider_name: string
+    total_tokens: number
+    request_count: number
+  }>
+  total_requests: number
+}
+
+interface LogsResponse {
+  logs: Array<Record<string, unknown>>
+  total: number
+}
+
+onMounted(async () => {
+  try {
+    const providers = await api<Provider[]>('/api/providers')
+    providerCount.value = providers.length
+    const totalModels = providers.reduce((sum, p) => sum + p.models.length, 0)
+    routeCount.value = totalModels
+  } catch {
+    // silently fail
+  }
+
+  try {
+    const usage = await api<UsageResponse>('/api/usage?days=1')
+    todayRequests.value = usage.total_requests
+    todayTokens.value = usage.stats.reduce((sum, s) => sum + s.total_tokens, 0)
+  } catch {
+    // silently fail
+  }
+
+  try {
+    const result = await api<LogsResponse>('/api/logs?page=1&limit=5')
+    recentLogs.value = result.logs
+  } catch {
+    // silently fail
+  }
+})
 
 const logColumns = [
   { title: '时间', key: 'created_at', width: 180 },

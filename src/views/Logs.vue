@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '../api'
 import { NTag } from 'naive-ui'
 import type { RequestLog } from '../types'
 
@@ -80,14 +80,16 @@ const columns = [
     title: '状态码',
     key: 'status_code',
     width: 90,
-    render: (row: RequestLog) =>
-      h(NTag, { size: 'small', type: statusCodeColor(row.status_code) }, () => String(row.status_code)),
+    render: (row: RequestLog) => {
+      const code = row.status_code ?? 0
+      return h(NTag, { size: 'small', type: statusCodeColor(code) }, () => String(code))
+    },
   },
   {
     title: '延迟(ms)',
     key: 'duration_ms',
     width: 100,
-    render: (row: RequestLog) => `${row.duration_ms}ms`,
+    render: (row: RequestLog) => row.duration_ms != null ? `${row.duration_ms}ms` : '-',
   },
   {
     title: 'Token 总量',
@@ -110,10 +112,10 @@ function handlePageChange(page: number) {
 async function fetchLogs() {
   loading.value = true
   try {
-    logs.value = await invoke<RequestLog[]>('get_logs', {
-      page: currentPage.value,
-      limit: pageSize,
-    })
+    const result = await api<{ logs: RequestLog[]; total: number }>(
+      `/api/logs?page=${currentPage.value}&limit=${pageSize}`
+    )
+    logs.value = result.logs
   } catch (error) {
     console.error('Failed to load logs:', error)
   } finally {

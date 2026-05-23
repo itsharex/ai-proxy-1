@@ -1,4 +1,6 @@
-use axum::http::{HeaderValue, Method};
+use axum::body::Body;
+use axum::http::{HeaderValue, Method, Request, StatusCode};
+use axum::response::{IntoResponse, Response};
 use tower_http::cors::CorsLayer;
 
 pub fn create_cors_layer(host: &str) -> CorsLayer {
@@ -27,4 +29,53 @@ pub fn create_cors_layer(host: &str) -> CorsLayer {
             Method::OPTIONS,
         ])
         .allow_headers(tower_http::cors::Any)
+}
+
+pub async fn auth_middleware(
+    req: Request<Body>,
+    next: axum::middleware::Next,
+) -> Response {
+    let pool = crate::db::get_pool().await;
+
+    let enabled: (String,) = match sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'proxy_auth_enabled'",
+    )
+    .fetch_one(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return next.run(req).await,
+    };
+
+    if enabled.0 != "true" {
+        return next.run(req).await;
+    }
+
+    let pool = crate::db::get_pool().await;
+    let expected_key: (String,) = match sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'proxy_auth_key'",
+    )
+    .fetch_one(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => return next.run(req).await,
+    };
+
+    if expected_key.0.is_empty() {
+        return next.run(req).await;
+    }
+
+    let provided = req
+        .headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+
+    if provided == expected_key.0 {
+        next.run(req).await
+    } else {
+        (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+    }
 }

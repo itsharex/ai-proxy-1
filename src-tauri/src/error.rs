@@ -22,6 +22,9 @@ pub enum ProxyError {
     #[error("Key management error: {0}")]
     KeyManagement(String),
 
+    #[error("Routing error: {0}")]
+    Routing(String),
+
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -35,6 +38,7 @@ impl IntoResponse for ProxyError {
             ProxyError::Network(m) => (StatusCode::BAD_GATEWAY, m.clone()),
             ProxyError::Config(m) => (StatusCode::INTERNAL_SERVER_ERROR, m.clone()),
             ProxyError::KeyManagement(m) => (StatusCode::INTERNAL_SERVER_ERROR, m.clone()),
+            ProxyError::Routing(m) => (StatusCode::NOT_FOUND, m.clone()),
             ProxyError::Database(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         };
 

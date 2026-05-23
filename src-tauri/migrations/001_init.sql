@@ -2,8 +2,6 @@ CREATE TABLE IF NOT EXISTS providers (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     base_url TEXT NOT NULL,
-    auth_type TEXT NOT NULL DEFAULT 'bearer',
-    auth_header TEXT NOT NULL DEFAULT 'Authorization',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

@@ -15,4 +15,12 @@ pub trait FormatGenerator: Send + Sync {
     fn generate_request(&self, ir: &IrRequest) -> Result<serde_json::Value, ProxyError>;
     fn generate_stream_chunk(&self, chunk: &IrStreamChunk) -> String;
     fn generate_response(&self, ir: &IrResponse) -> Result<serde_json::Value, ProxyError>;
+
+    fn generate_stream_start(&self, _response_id: &str, _model: &str) -> Option<String> {
+        None
+    }
+
+    fn generate_stream_end(&self) -> Option<String> {
+        None
+    }
 }

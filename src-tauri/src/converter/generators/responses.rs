@@ -12,7 +12,7 @@ impl FormatGenerator for ResponsesGenerator {
 
         for msg in &ir.messages {
             match msg.role {
-                IrRole::System => {
+                IrRole::System | IrRole::Developer => {
                     let text = extract_text_content(&msg.content);
                     instructions = Some(text);
                 }
@@ -24,16 +24,32 @@ impl FormatGenerator for ResponsesGenerator {
                     }));
                 }
                 IrRole::Assistant => {
-                    let content = convert_message_content(&msg.content);
-                    input_items.push(json!({
+                    let mut item = json!({
                         "role": "assistant",
-                        "content": content,
-                    }));
+                    });
+                    if let Some(tool_calls) = &msg.tool_calls {
+                        for tc in tool_calls {
+                            input_items.push(json!({
+                                "type": "function_call",
+                                "call_id": tc.id,
+                                "name": tc.name,
+                                "arguments": tc.arguments,
+                            }));
+                        }
+                    }
+                    let content = convert_message_content(&msg.content);
+                    if content != json!("") && content != json!([]) {
+                        item["content"] = content;
+                        input_items.push(item);
+                    } else if msg.tool_calls.is_none() {
+                        input_items.push(item);
+                    }
                 }
                 IrRole::Tool => {
                     if let Some(IrContentPart::ToolResult {
                         tool_use_id,
                         content,
+                        ..
                     }) = msg.content.first()
                     {
                         input_items.push(json!({
@@ -67,6 +83,9 @@ impl FormatGenerator for ResponsesGenerator {
                     if let Some(desc) = &t.description {
                         tool["description"] = json!(desc);
                     }
+                    if let Some(strict) = t.strict {
+                        tool["strict"] = json!(strict);
+                    }
                     tool
                 })
                 .collect();
@@ -85,11 +104,67 @@ impl FormatGenerator for ResponsesGenerator {
             body["max_output_tokens"] = json!(max_tokens);
         }
 
+        if let Some(stop) = &ir.stop_sequences {
+            body["stop"] = json!(stop);
+        }
+
+        if let Some(tool_choice) = &ir.tool_choice {
+            body["tool_choice"] = tool_choice.clone();
+        }
+
+        if let Some(response_format) = &ir.response_format {
+            body["text"] = json!({ "format": response_format });
+        }
+
+        if let Some(thinking) = &ir.thinking {
+            if thinking.enabled {
+                if let Some(budget) = thinking.budget_tokens {
+                    let effort = if budget <= 5000 { "low" }
+                        else if budget <= 15000 { "medium" }
+                        else { "high" };
+                    body["reasoning"] = json!({ "effort": effort });
+                }
+            }
+        }
+
+        if let Some(prev_id) = ir.extra.get("previous_response_id") {
+            body["previous_response_id"] = prev_id.clone();
+        }
+
         Ok(body)
     }
 
     fn generate_stream_chunk(&self, chunk: &IrStreamChunk) -> String {
         let response_id = chunk.id.as_deref().unwrap_or("resp-proxy");
+
+        if let Some(tool_calls) = &chunk.delta_tool_calls {
+            if let Some(tc) = tool_calls.first() {
+                if tc.id.is_some() && tc.name.is_some() {
+                    let event = json!({
+                        "type": "response.output_item.added",
+                        "output_index": 0,
+                        "item": {
+                            "type": "function_call",
+                            "id": format!("fc_{}", tc.id.as_deref().unwrap_or("")),
+                            "call_id": tc.id,
+                            "name": tc.name,
+                            "arguments": "",
+                        }
+                    });
+                    return format!("data: {}\n\n", event);
+                }
+                if let Some(args) = &tc.arguments {
+                    let event = json!({
+                        "type": "response.function_call_arguments.delta",
+                        "output_index": 0,
+                        "item_id": format!("fc_{}", tc.id.as_deref().unwrap_or("0")),
+                        "call_id": tc.id,
+                        "delta": args,
+                    });
+                    return format!("data: {}\n\n", event);
+                }
+            }
+        }
 
         if let Some(_reason) = &chunk.finish_reason {
             let completed = json!({
@@ -113,27 +188,52 @@ impl FormatGenerator for ResponsesGenerator {
             return format!("data: {}\n\n", delta_event);
         }
 
-        let empty = json!({
-            "type": "response.output_text.delta",
-            "delta": "",
-            "response_id": response_id,
+        String::new()
+    }
+
+    fn generate_stream_start(&self, response_id: &str, model: &str) -> Option<String> {
+        let event = json!({
+            "type": "response.created",
+            "response": {
+                "id": response_id,
+                "object": "response",
+                "status": "in_progress",
+                "model": model,
+                "output": [],
+            }
         });
-        format!("data: {}\n\n", empty)
+        Some(format!("data: {}\n\n", event))
     }
 
     fn generate_response(&self, ir: &IrResponse) -> Result<Value, ProxyError> {
         let id = ir.id.as_deref().unwrap_or("resp-proxy");
 
-        let text = extract_text_content(&ir.message.content);
+        let mut output: Vec<Value> = Vec::new();
 
-        let output = json!([{
-            "type": "message",
-            "role": "assistant",
-            "content": [{
-                "type": "output_text",
-                "text": text,
-            }],
-        }]);
+        let text = extract_text_content(&ir.message.content);
+        if !text.is_empty() {
+            output.push(json!({
+                "type": "message",
+                "id": "msg_proxy",
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": text,
+                }],
+            }));
+        }
+
+        if let Some(tool_calls) = &ir.message.tool_calls {
+            for tc in tool_calls {
+                output.push(json!({
+                    "type": "function_call",
+                    "id": format!("fc_{}", tc.id),
+                    "call_id": tc.id,
+                    "name": tc.name,
+                    "arguments": tc.arguments,
+                }));
+            }
+        }
 
         Ok(json!({
             "id": id,
@@ -174,6 +274,10 @@ fn convert_message_content(parts: &[IrContentPart]) -> Value {
                 "type": "input_text",
                 "text": text,
             }),
+            IrContentPart::Thinking { text } => json!({
+                "type": "input_text",
+                "text": text,
+            }),
             IrContentPart::Image { url, data, media_type } => {
                 if let Some(image_url) = url {
                     json!({
@@ -196,7 +300,7 @@ fn convert_message_content(parts: &[IrContentPart]) -> Value {
                 "name": name,
                 "arguments": input.to_string(),
             }),
-            IrContentPart::ToolResult { tool_use_id, content } => json!({
+            IrContentPart::ToolResult { tool_use_id, content, .. } => json!({
                 "type": "function_call_output",
                 "call_id": tool_use_id,
                 "output": content,

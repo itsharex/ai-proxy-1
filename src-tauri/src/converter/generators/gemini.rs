@@ -12,7 +12,7 @@ impl FormatGenerator for GeminiGenerator {
 
         for msg in &ir.messages {
             match msg.role {
-                IrRole::System => {
+                IrRole::System | IrRole::Developer => {
                     let text = extract_text_parts(&msg.content);
                     system_instruction = Some(json!({
                         "parts": [{ "text": text }]
@@ -57,6 +57,11 @@ impl FormatGenerator for GeminiGenerator {
             has_config = true;
         }
 
+        if let Some(top_k) = ir.top_k {
+            generation_config["topK"] = json!(top_k);
+            has_config = true;
+        }
+
         if let Some(max_tokens) = ir.max_tokens {
             generation_config["maxOutputTokens"] = json!(max_tokens);
             has_config = true;
@@ -69,10 +74,20 @@ impl FormatGenerator for GeminiGenerator {
 
         if let Some(response_format) = &ir.response_format {
             if let Some(rt) = response_format.get("type").and_then(|t| t.as_str()) {
-                generation_config["responseMimeType"] = match rt {
-                    "json_object" => json!("application/json"),
-                    _ => json!("text/plain"),
-                };
+                match rt {
+                    "json_object" => {
+                        generation_config["responseMimeType"] = json!("application/json");
+                    }
+                    "json_schema" => {
+                        generation_config["responseMimeType"] = json!("application/json");
+                        if let Some(schema) = response_format.get("json_schema") {
+                            if let Some(schema_value) = schema.get("schema") {
+                                generation_config["responseSchema"] = schema_value.clone();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
                 has_config = true;
             }
         }
@@ -100,24 +115,66 @@ impl FormatGenerator for GeminiGenerator {
             }]);
         }
 
+        if let Some(tool_choice) = &ir.tool_choice {
+            let mode = match tool_choice {
+                Value::String(s) => match s.as_str() {
+                    "auto" => "AUTO",
+                    "none" => "NONE",
+                    "required" => "ANY",
+                    _ => "AUTO",
+                },
+                Value::Object(obj) => {
+                    if obj.get("type").and_then(|v| v.as_str()) == Some("function") {
+                        "ANY"
+                    } else {
+                        "AUTO"
+                    }
+                }
+                _ => "AUTO",
+            };
+            body["toolConfig"] = json!({
+                "function_calling_config": { "mode": mode }
+            });
+        }
+
         Ok(body)
     }
 
     fn generate_stream_chunk(&self, chunk: &IrStreamChunk) -> String {
+        let mut parts: Vec<Value> = Vec::new();
+
+        if let Some(content) = &chunk.delta_content {
+            parts.push(json!({ "text": content }));
+        }
+
+        if let Some(tool_calls) = &chunk.delta_tool_calls {
+            for tc in tool_calls {
+                if let Some(args_str) = &tc.arguments {
+                    let args: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
+                    parts.push(json!({
+                        "functionCall": {
+                            "name": tc.name.as_deref().unwrap_or(""),
+                            "args": args,
+                        }
+                    }));
+                }
+            }
+        }
+
+        if parts.is_empty() && chunk.delta_thinking.is_none() {
+            parts.push(json!({ "text": "" }));
+        }
+
         let mut candidate = json!({
             "content": {
                 "role": "model",
-                "parts": [],
+                "parts": parts,
             },
         });
 
-        if let Some(content) = &chunk.delta_content {
-            candidate["content"]["parts"] = json!([{ "text": content }]);
-        }
-
         if let Some(reason) = &chunk.finish_reason {
             let gemini_reason = match reason.as_str() {
-                "stop" | "end_turn" => "STOP",
+                "stop" | "end_turn" | "completed" => "STOP",
                 "max_tokens" | "length" => "MAX_TOKENS",
                 "tool_calls" | "tool_use" => "STOP",
                 _ => "STOP",
@@ -143,16 +200,38 @@ impl FormatGenerator for GeminiGenerator {
     fn generate_response(&self, ir: &IrResponse) -> Result<Value, ProxyError> {
         let text = extract_text_parts(&ir.message.content);
 
+        let mut parts: Vec<Value> = Vec::new();
+
+        if !text.is_empty() {
+            parts.push(json!({ "text": text }));
+        }
+
+        if let Some(tool_calls) = &ir.message.tool_calls {
+            for tc in tool_calls {
+                parts.push(json!({
+                    "functionCall": {
+                        "name": tc.name,
+                        "args": serde_json::from_str::<Value>(&tc.arguments)
+                            .unwrap_or(json!({})),
+                    }
+                }));
+            }
+        }
+
+        if parts.is_empty() {
+            parts.push(json!({ "text": "" }));
+        }
+
         let mut candidate = json!({
             "content": {
                 "role": "model",
-                "parts": [{ "text": text }],
+                "parts": parts,
             },
         });
 
         if let Some(reason) = &ir.finish_reason {
             let gemini_reason = match reason.as_str() {
-                "stop" | "end_turn" => "STOP",
+                "stop" | "end_turn" | "completed" => "STOP",
                 "max_tokens" | "length" => "MAX_TOKENS",
                 "tool_calls" | "tool_use" => "STOP",
                 _ => "STOP",
@@ -160,22 +239,6 @@ impl FormatGenerator for GeminiGenerator {
             candidate["finishReason"] = json!(gemini_reason);
         } else {
             candidate["finishReason"] = json!("STOP");
-        }
-
-        if let Some(tool_calls) = &ir.message.tool_calls {
-            let parts: Vec<Value> = tool_calls
-                .iter()
-                .map(|tc| {
-                    json!({
-                        "functionCall": {
-                            "name": tc.name,
-                            "args": serde_json::from_str::<Value>(&tc.arguments)
-                                .unwrap_or(json!({})),
-                        }
-                    })
-                })
-                .collect();
-            candidate["content"]["parts"] = json!(parts);
         }
 
         Ok(json!({
@@ -205,6 +268,7 @@ fn convert_gemini_parts(parts: &[IrContentPart]) -> Vec<Value> {
         .iter()
         .map(|part| match part {
             IrContentPart::Text { text } => json!({ "text": text }),
+            IrContentPart::Thinking { text } => json!({ "text": text }),
             IrContentPart::Image { url, data, media_type } => {
                 if let Some(image_url) = url {
                     json!({
@@ -232,9 +296,11 @@ fn convert_gemini_parts(parts: &[IrContentPart]) -> Vec<Value> {
                     }
                 })
             }
-            IrContentPart::ToolResult { content, .. } => {
+            IrContentPart::ToolResult { tool_use_id, content, tool_name } => {
+                let name = tool_name.as_deref().unwrap_or(tool_use_id);
                 json!({
                     "functionResponse": {
+                        "name": name,
                         "response": {
                             "result": content,
                         }

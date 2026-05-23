@@ -12,7 +12,7 @@ impl FormatGenerator for AnthropicGenerator {
 
         for msg in &ir.messages {
             match msg.role {
-                IrRole::System => {
+                IrRole::System | IrRole::Developer => {
                     let text = extract_text_parts(&msg.content);
                     system_text = Some(text);
                 }
@@ -76,19 +76,94 @@ impl FormatGenerator for AnthropicGenerator {
             body["top_p"] = json!(top_p);
         }
 
+        if let Some(top_k) = ir.top_k {
+            body["top_k"] = json!(top_k);
+        }
+
         if let Some(stop) = &ir.stop_sequences {
             body["stop_sequences"] = json!(stop);
+        }
+
+        if let Some(thinking) = &ir.thinking {
+            if thinking.enabled {
+                body["thinking"] = json!({
+                    "type": "enabled",
+                    "budget_tokens": thinking.budget_tokens.unwrap_or(10000),
+                });
+                if ir.max_tokens.is_none() {
+                    body["max_tokens"] = json!(16000);
+                }
+            }
+        }
+
+        if ir.extra.contains_key("has_cache_control") {
+            // cache_control is per-element, not top-level
         }
 
         Ok(body)
     }
 
+    fn generate_stream_start(&self, response_id: &str, model: &str) -> Option<String> {
+        let event = json!({
+            "type": "message_start",
+            "message": {
+                "id": response_id,
+                "type": "message",
+                "role": "assistant",
+                "model": model,
+                "content": [],
+                "stop_reason": null,
+                "stop_sequence": null,
+                "usage": {
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                }
+            }
+        });
+        Some(format!("event: message_start\ndata: {}\n\n", event))
+    }
+
     fn generate_stream_chunk(&self, chunk: &IrStreamChunk) -> String {
-        if let Some(_reason) = &chunk.finish_reason {
-            let stop_event = json!({
+        if let Some(reason) = &chunk.finish_reason {
+            let stop_reason = match reason.as_str() {
+                "stop" | "end_turn" | "completed" => "end_turn",
+                "tool_calls" | "tool_use" => "tool_use",
+                r => r,
+            };
+
+            let usage = chunk.usage.as_ref().map(|u| json!({
+                "output_tokens": u.completion_tokens,
+            })).unwrap_or(json!({ "output_tokens": 0 }));
+
+            let message_delta = json!({
+                "type": "message_delta",
+                "delta": {
+                    "stop_reason": stop_reason,
+                    "stop_sequence": null,
+                },
+                "usage": usage,
+            });
+
+            let message_stop = json!({
                 "type": "message_stop",
             });
-            return format!("event: message_stop\ndata: {}\n\n", stop_event);
+
+            return format!(
+                "event: message_delta\ndata: {}\n\nevent: message_stop\ndata: {}\n\n",
+                message_delta, message_stop
+            );
+        }
+
+        if let Some(thinking) = &chunk.delta_thinking {
+            let delta_event = json!({
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "thinking_delta",
+                    "thinking": thinking,
+                }
+            });
+            return format!("event: content_block_delta\ndata: {}\n\n", delta_event);
         }
 
         if let Some(content) = &chunk.delta_content {
@@ -135,6 +210,10 @@ impl FormatGenerator for AnthropicGenerator {
         String::new()
     }
 
+    fn generate_stream_end(&self) -> Option<String> {
+        None
+    }
+
     fn generate_response(&self, ir: &IrResponse) -> Result<Value, ProxyError> {
         let id = ir.id.as_deref().unwrap_or("msg-proxy");
 
@@ -146,6 +225,12 @@ impl FormatGenerator for AnthropicGenerator {
                     content.push(json!({
                         "type": "text",
                         "text": text,
+                    }));
+                }
+                IrContentPart::Thinking { text } => {
+                    content.push(json!({
+                        "type": "thinking",
+                        "thinking": text,
                     }));
                 }
                 IrContentPart::ToolUse { id, name, input } => {
@@ -168,7 +253,7 @@ impl FormatGenerator for AnthropicGenerator {
         }
 
         let stop_reason = match ir.finish_reason.as_deref() {
-            Some("stop") | Some("end_turn") => "end_turn",
+            Some("stop") | Some("end_turn") | Some("completed") => "end_turn",
             Some("tool_calls") | Some("tool_use") => "tool_use",
             Some(r) => r,
             None => "end_turn",
@@ -215,6 +300,10 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
                 "type": "text",
                 "text": text,
             }),
+            IrContentPart::Thinking { text } => json!({
+                "type": "text",
+                "text": text,
+            }),
             IrContentPart::Image { url, data, media_type } => {
                 let source = if let Some(image_url) = url {
                     json!({
@@ -242,7 +331,7 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
                 "name": name,
                 "input": input,
             }),
-            IrContentPart::ToolResult { tool_use_id, content } => {
+            IrContentPart::ToolResult { tool_use_id, content, .. } => {
                 let _ = role;
                 json!({
                     "type": "tool_result",

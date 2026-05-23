@@ -40,9 +40,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h } from 'vue'
+import { ref, computed, h, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon } from 'naive-ui'
+import { initApi, getProxyPort, isInitialized } from './api'
 import {
   HomeOutline,
   ServerOutline,
@@ -56,8 +57,18 @@ import {
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
-const serverRunning = ref(true)
+const serverRunning = ref(false)
 const proxyPort = ref(7860)
+
+onMounted(async () => {
+  try {
+    await initApi()
+    serverRunning.value = true
+    proxyPort.value = getProxyPort()
+  } catch {
+    serverRunning.value = false
+  }
+})
 
 function renderIcon(icon: typeof HomeOutline) {
   return () => h(NIcon, null, () => h(icon))
@@ -66,7 +77,7 @@ function renderIcon(icon: typeof HomeOutline) {
 const menuOptions = [
   { label: '仪表盘', key: '/', icon: renderIcon(HomeOutline) },
   { label: '供应商', key: '/providers', icon: renderIcon(ServerOutline) },
-  { label: '模型路由', key: '/models', icon: renderIcon(GitBranchOutline) },
+  { label: '模型总览', key: '/models', icon: renderIcon(GitBranchOutline) },
   { label: '拦截规则', key: '/rules', icon: renderIcon(FilterOutline) },
   { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
   { label: '用量统计', key: '/statistics', icon: renderIcon(BarChartOutline) },
@@ -74,6 +85,14 @@ const menuOptions = [
 ]
 
 const currentPath = computed(() => route.path)
+
+watch(currentPath, () => {
+  const running = isInitialized()
+  serverRunning.value = running
+  if (running) {
+    proxyPort.value = getProxyPort()
+  }
+})
 
 function handleMenuSelect(key: string) {
   router.push(key)

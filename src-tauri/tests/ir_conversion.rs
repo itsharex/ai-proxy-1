@@ -37,11 +37,17 @@ fn sample_ir_request() -> IrRequest {
         tool_choice: None,
         temperature: Some(0.7),
         top_p: None,
+        top_k: None,
         max_tokens: Some(1024),
         stream: false,
         stop_sequences: None,
         response_format: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        seed: None,
+        thinking: None,
         metadata: std::collections::HashMap::new(),
+        extra: std::collections::HashMap::new(),
     }
 }
 
@@ -197,15 +203,22 @@ fn completions_tool_calls_request() {
                 },
                 "required": ["location"]
             }),
+            strict: None,
         }]),
         tool_choice: None,
         temperature: None,
         top_p: None,
+        top_k: None,
         max_tokens: None,
         stream: false,
         stop_sequences: None,
         response_format: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        seed: None,
+        thinking: None,
         metadata: std::collections::HashMap::new(),
+        extra: std::collections::HashMap::new(),
     };
 
     let body = generator.generate_request(&ir).unwrap();

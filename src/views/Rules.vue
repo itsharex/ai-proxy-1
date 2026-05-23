@@ -70,7 +70,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, h } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
+import { api } from '../api'
 import { NTag, NPopconfirm, NButton, NSwitch, NSpace, useMessage } from 'naive-ui'
 import type { InterceptorRule, RuleCondition, RuleAction } from '../types'
 
@@ -159,12 +159,15 @@ async function handleAdd() {
   }
 
   try {
-    await invoke('create_rule', {
-      name: formData.value.name,
-      phase: formData.value.phase,
-      condition,
-      action,
-      priority: formData.value.priority,
+    await api('/api/rules', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: formData.value.name,
+        phase: formData.value.phase,
+        condition,
+        action,
+        priority: formData.value.priority,
+      }),
     })
     message.success('规则添加成功')
     await fetchRules()
@@ -176,7 +179,10 @@ async function handleAdd() {
 
 async function handleToggle(id: string, enabled: boolean) {
   try {
-    await invoke('update_rule', { id, enabled })
+    await api(`/api/rules/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    })
     const target = rules.value.find((r) => r.id === id)
     if (target) {
       rules.value = rules.value.map((r) =>
@@ -190,7 +196,7 @@ async function handleToggle(id: string, enabled: boolean) {
 
 async function handleDelete(id: string) {
   try {
-    await invoke('delete_rule', { id })
+    await api(`/api/rules/${id}`, { method: 'DELETE' })
     message.success('规则已删除')
     await fetchRules()
   } catch (error) {
@@ -201,7 +207,7 @@ async function handleDelete(id: string) {
 async function fetchRules() {
   loading.value = true
   try {
-    rules.value = await invoke<InterceptorRule[]>('get_rules')
+    rules.value = await api<InterceptorRule[]>('/api/rules')
   } catch (error) {
     console.error('Failed to load rules:', error)
   } finally {

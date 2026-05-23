@@ -21,6 +21,7 @@ impl FormatParser for CompletionsParser {
             .map(|m| {
                 let role = match m["role"].as_str().unwrap_or("user") {
                     "system" => IrRole::System,
+                    "developer" => IrRole::Developer,
                     "user" => IrRole::User,
                     "assistant" => IrRole::Assistant,
                     "tool" => IrRole::Tool,
@@ -42,6 +43,7 @@ impl FormatParser for CompletionsParser {
                                 data: None,
                                 media_type: None,
                             }),
+                            Some("refusal") => None,
                             _ => None,
                         })
                         .collect()
@@ -68,7 +70,7 @@ impl FormatParser for CompletionsParser {
                 Ok(IrMessage {
                     role,
                     content,
-                    name: None,
+                    name: m.get("name").and_then(|v| v.as_str()).map(String::from),
                     tool_call_id: m.get("tool_call_id").and_then(|v| v.as_str()).map(String::from),
                     tool_calls,
                 })
@@ -85,6 +87,7 @@ impl FormatParser for CompletionsParser {
                             name: func.get("name")?.as_str()?.to_string(),
                             description: func.get("description").and_then(|v| v.as_str()).map(String::from),
                             input_schema: func.get("parameters").cloned().unwrap_or(Value::Null),
+                            strict: func.get("strict").and_then(|v| v.as_bool()),
                         })
                     })
                     .collect::<Vec<_>>(),
@@ -96,6 +99,24 @@ impl FormatParser for CompletionsParser {
             metadata.insert("user".into(), user.clone());
         }
 
+        let max_tokens = body.get("max_completion_tokens")
+            .or_else(|| body.get("max_tokens"))
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+
+        let thinking = body.get("reasoning").and_then(|r| {
+            let effort = r["effort"].as_str().unwrap_or("medium");
+            Some(IrThinkingConfig {
+                enabled: true,
+                budget_tokens: match effort {
+                    "low" => Some(5000),
+                    "medium" => Some(10000),
+                    "high" => Some(30000),
+                    _ => None,
+                },
+            })
+        });
+
         Ok(IrRequest {
             model,
             messages: ir_messages,
@@ -103,7 +124,8 @@ impl FormatParser for CompletionsParser {
             tool_choice: body.get("tool_choice").cloned(),
             temperature: body.get("temperature").and_then(|v| v.as_f64()).map(|v| v as f32),
             top_p: body.get("top_p").and_then(|v| v.as_f64()).map(|v| v as f32),
-            max_tokens: body.get("max_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+            top_k: None,
+            max_tokens,
             stream: body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false),
             stop_sequences: body.get("stop").and_then(|v| {
                 if v.is_string() {
@@ -115,7 +137,12 @@ impl FormatParser for CompletionsParser {
                 }
             }),
             response_format: body.get("response_format").cloned(),
+            presence_penalty: body.get("presence_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
+            frequency_penalty: body.get("frequency_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
+            seed: body.get("seed").and_then(|v| v.as_u64()),
+            thinking,
             metadata,
+            extra: std::collections::HashMap::new(),
         })
     }
 
@@ -130,6 +157,7 @@ impl FormatParser for CompletionsParser {
                 model: None,
                 delta_content: None,
                 delta_tool_calls: None,
+                delta_thinking: None,
                 finish_reason: Some("stop".into()),
                 usage: None,
             }));
@@ -156,6 +184,7 @@ impl FormatParser for CompletionsParser {
                     })
                     .collect()
             }),
+            delta_thinking: None,
             finish_reason: choice.and_then(|c| c["finish_reason"].as_str()).map(String::from),
             usage: chunk.get("usage").map(|u| IrUsage {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
@@ -183,14 +212,31 @@ impl FormatParser for CompletionsParser {
             if calls.is_empty() { None } else { Some(calls) }
         });
 
+        let content = if msg["content"].is_string() {
+            let text = msg["content"].as_str().unwrap_or("").to_string();
+            if text.is_empty() { vec![] } else {
+                vec![IrContentPart::Text { text }]
+            }
+        } else if let Some(arr) = msg["content"].as_array() {
+            arr.iter()
+                .filter_map(|p| match p["type"].as_str() {
+                    Some("text") => Some(IrContentPart::Text {
+                        text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    }),
+                    Some("refusal") => None,
+                    _ => None,
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
         Ok(IrResponse {
             id: body["id"].as_str().map(String::from),
             model: body["model"].as_str().map(String::from),
             message: IrMessage {
                 role: IrRole::Assistant,
-                content: vec![IrContentPart::Text {
-                    text: msg["content"].as_str().unwrap_or("").to_string(),
-                }],
+                content,
                 name: None,
                 tool_call_id: None,
                 tool_calls,

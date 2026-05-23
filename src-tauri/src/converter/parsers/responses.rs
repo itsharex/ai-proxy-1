@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::converter::ir::{
     IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage,
+    IrToolCall, IrToolCallDelta, IrUsage, IrThinkingConfig,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -67,6 +67,7 @@ impl FormatParser for ResponsesParser {
                             .get("parameters")
                             .cloned()
                             .unwrap_or(Value::Object(serde_json::Map::new())),
+                        strict: t.get("strict").and_then(|v| v.as_bool()),
                     })
                 })
                 .collect::<Vec<_>>()
@@ -84,7 +85,25 @@ impl FormatParser for ResponsesParser {
         });
 
         let tool_choice = body.get("tool_choice").cloned();
-        let response_format = body.get("response_format").cloned();
+        let response_format = body.get("text").and_then(|t| t.get("format")).cloned()
+            .or_else(|| body.get("response_format").cloned());
+
+        let thinking = body.get("reasoning").and_then(|r| {
+            Some(IrThinkingConfig {
+                enabled: true,
+                budget_tokens: match r["effort"].as_str().unwrap_or("medium") {
+                    "low" => Some(5000),
+                    "medium" => Some(10000),
+                    "high" => Some(30000),
+                    _ => None,
+                },
+            })
+        });
+
+        let mut extra = std::collections::HashMap::new();
+        if let Some(prev_id) = body.get("previous_response_id") {
+            extra.insert("previous_response_id".into(), prev_id.clone());
+        }
 
         Ok(IrRequest {
             model,
@@ -93,11 +112,17 @@ impl FormatParser for ResponsesParser {
             tool_choice,
             temperature,
             top_p,
+            top_k: None,
             max_tokens,
             stream,
             stop_sequences,
             response_format,
+            presence_penalty: None,
+            frequency_penalty: None,
+            seed: None,
+            thinking,
             metadata: std::collections::HashMap::new(),
+            extra,
         })
     }
 
@@ -131,9 +156,52 @@ impl FormatParser for ResponsesParser {
                     model: None,
                     delta_content: Some(delta.to_string()),
                     delta_tool_calls: None,
+                    delta_thinking: None,
                     finish_reason: None,
                     usage: None,
                 }))
+            }
+            "response.function_call_arguments.delta" => {
+                let delta = event["delta"].as_str().unwrap_or("");
+                Ok(Some(IrStreamChunk {
+                    id: None,
+                    model: None,
+                    delta_content: None,
+                    delta_tool_calls: Some(vec![IrToolCallDelta {
+                        index: 0,
+                        id: None,
+                        name: None,
+                        arguments: Some(delta.to_string()),
+                    }]),
+                    delta_thinking: None,
+                    finish_reason: None,
+                    usage: None,
+                }))
+            }
+            "response.output_item.added" => {
+                let item = &event["item"];
+                let item_type = item["type"].as_str().unwrap_or("");
+
+                if item_type == "function_call" {
+                    let call_id = item["call_id"].as_str().unwrap_or("");
+                    let name = item["name"].as_str().unwrap_or("");
+                    return Ok(Some(IrStreamChunk {
+                        id: None,
+                        model: None,
+                        delta_content: None,
+                        delta_tool_calls: Some(vec![IrToolCallDelta {
+                            index: 0,
+                            id: Some(call_id.to_string()),
+                            name: Some(name.to_string()),
+                            arguments: None,
+                        }]),
+                        delta_thinking: None,
+                        finish_reason: None,
+                        usage: None,
+                    }));
+                }
+
+                Ok(None)
             }
             "response.output_item.done" => {
                 let item = &event["item"];
@@ -154,6 +222,7 @@ impl FormatParser for ResponsesParser {
                             name: Some(name.to_string()),
                             arguments: Some(arguments.to_string()),
                         }]),
+                        delta_thinking: None,
                         finish_reason: None,
                         usage: None,
                     }));
@@ -172,18 +241,13 @@ impl FormatParser for ResponsesParser {
                     })
                 });
 
-                let finish_reason = response["status"]
-                    .as_str()
-                    .filter(|s| *s != "in_progress")
-                    .map(String::from)
-                    .or(Some("completed".to_string()));
-
                 Ok(Some(IrStreamChunk {
                     id: response["id"].as_str().map(String::from),
                     model: response["model"].as_str().map(String::from),
                     delta_content: None,
                     delta_tool_calls: None,
-                    finish_reason,
+                    delta_thinking: None,
+                    finish_reason: Some("completed".to_string()),
                     usage,
                 }))
             }
@@ -206,12 +270,17 @@ impl FormatParser for ResponsesParser {
                     "message" => {
                         if let Some(parts) = output["content"].as_array() {
                             for part in parts {
-                                if part["type"].as_str() == Some("output_text") {
-                                    if let Some(text) = part["text"].as_str() {
-                                        content_parts.push(IrContentPart::Text {
-                                            text: text.to_string(),
-                                        });
+                                let part_type = part["type"].as_str().unwrap_or("");
+                                match part_type {
+                                    "output_text" => {
+                                        if let Some(text) = part["text"].as_str() {
+                                            content_parts.push(IrContentPart::Text {
+                                                text: text.to_string(),
+                                            });
+                                        }
                                     }
+                                    "refusal" => {}
+                                    _ => {}
                                 }
                             }
                         }
@@ -276,71 +345,97 @@ impl FormatParser for ResponsesParser {
 }
 
 fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
-    let role_str = item["role"].as_str().unwrap_or("");
+    let item_type = item["type"].as_str().unwrap_or("");
 
-    let role = match role_str {
-        "user" => IrRole::User,
-        "assistant" => IrRole::Assistant,
-        "system" => IrRole::System,
-        "" => {
-            let item_type = item["type"].as_str().unwrap_or("message");
-            if item_type == "message" {
-                item["role"]
-                    .as_str()
-                    .and_then(|r| match r {
-                        "user" => Some(IrRole::User),
-                        "assistant" => Some(IrRole::Assistant),
-                        "system" => Some(IrRole::System),
-                        _ => None,
-                    })
-                    .ok_or_else(|| ProxyError::Parse("unknown role in input item".into()))?
-            } else {
-                return Ok(None);
-            }
+    match item_type {
+        "function_call" => {
+            let call_id = item["call_id"].as_str().unwrap_or("").to_string();
+            let name = item["name"].as_str().unwrap_or("").to_string();
+            let arguments = item["arguments"].as_str().unwrap_or("{}").to_string();
+
+            Ok(Some(IrMessage {
+                role: IrRole::Assistant,
+                content: vec![],
+                name: None,
+                tool_call_id: None,
+                tool_calls: Some(vec![IrToolCall {
+                    id: call_id,
+                    name,
+                    arguments,
+                }]),
+            }))
         }
-        other => {
-            return Err(ProxyError::Parse(format!(
-                "unknown role in input: {}",
-                other
-            )));
+        "function_call_output" => {
+            let call_id = item["call_id"].as_str().unwrap_or("").to_string();
+            let output = item["output"].as_str().unwrap_or("").to_string();
+
+            Ok(Some(IrMessage {
+                role: IrRole::Tool,
+                content: vec![IrContentPart::ToolResult {
+                    tool_use_id: call_id,
+                    content: output,
+                    tool_name: None,
+                }],
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            }))
         }
-    };
+        "message" | "" => {
+            let role_str = item["role"].as_str().unwrap_or("");
 
-    let mut content_parts = Vec::new();
+            let role = match role_str {
+                "user" => IrRole::User,
+                "assistant" => IrRole::Assistant,
+                "system" => IrRole::System,
+                "developer" => IrRole::Developer,
+                "" => return Ok(None),
+                other => {
+                    return Err(ProxyError::Parse(format!(
+                        "unknown role in input: {}",
+                        other
+                    )));
+                }
+            };
 
-    if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
-        if !text.is_empty() {
-            content_parts.push(IrContentPart::Text {
-                text: text.to_string(),
-            });
-        }
-    }
+            let mut content_parts = Vec::new();
 
-    if content_parts.is_empty() {
-        if let Some(arr) = item["content"].as_array() {
-            for part in arr {
-                if let Some(text) = part["text"].as_str() {
+            if let Some(text) = item.get("content").and_then(|c| c.as_str()) {
+                if !text.is_empty() {
                     content_parts.push(IrContentPart::Text {
                         text: text.to_string(),
                     });
                 }
             }
-        }
-    }
 
-    if content_parts.is_empty() {
-        if let Some(text) = item["input"].as_str() {
-            content_parts.push(IrContentPart::Text {
-                text: text.to_string(),
-            });
-        }
-    }
+            if content_parts.is_empty() {
+                if let Some(arr) = item["content"].as_array() {
+                    for part in arr {
+                        if let Some(text) = part["text"].as_str() {
+                            content_parts.push(IrContentPart::Text {
+                                text: text.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
 
-    Ok(Some(IrMessage {
-        role,
-        content: content_parts,
-        name: None,
-        tool_call_id: None,
-        tool_calls: None,
-    }))
+            if content_parts.is_empty() {
+                if let Some(text) = item["input"].as_str() {
+                    content_parts.push(IrContentPart::Text {
+                        text: text.to_string(),
+                    });
+                }
+            }
+
+            Ok(Some(IrMessage {
+                role,
+                content: content_parts,
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            }))
+        }
+        _ => Ok(None),
+    }
 }

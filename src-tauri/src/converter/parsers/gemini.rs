@@ -2,7 +2,7 @@ use serde_json::Value;
 
 use crate::converter::ir::{
     IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrUsage,
+    IrToolCall, IrToolCallDelta, IrUsage,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -64,6 +64,7 @@ impl FormatParser for GeminiParser {
                                 .get("parameters")
                                 .cloned()
                                 .unwrap_or(Value::Object(serde_json::Map::new())),
+                            strict: None,
                         })
                     })
                     .collect::<Vec<_>>()
@@ -75,6 +76,9 @@ impl FormatParser for GeminiParser {
         let top_p = body["generationConfig"]["topP"]
             .as_f64()
             .map(|v| v as f32);
+        let top_k = body["generationConfig"]["topK"]
+            .as_u64()
+            .map(|v| v as u32);
         let max_tokens = body["generationConfig"]["maxOutputTokens"]
             .as_u64()
             .map(|v| v as u32);
@@ -91,18 +95,36 @@ impl FormatParser for GeminiParser {
             .get("responseMimeType")
             .cloned();
 
+        let tool_choice = body.get("toolConfig")
+            .and_then(|tc| tc.get("function_calling_config"))
+            .and_then(|fcc| {
+                let mode = fcc["mode"].as_str().unwrap_or("AUTO");
+                match mode {
+                    "NONE" => Some(serde_json::json!("none")),
+                    "AUTO" => Some(serde_json::json!("auto")),
+                    "ANY" => Some(serde_json::json!("required")),
+                    _ => None,
+                }
+            });
+
         Ok(IrRequest {
             model: String::new(),
             messages,
             tools,
-            tool_choice: None,
+            tool_choice,
             temperature,
             top_p,
+            top_k,
             max_tokens,
             stream: false,
             stop_sequences,
             response_format,
+            presence_penalty: None,
+            frequency_penalty: None,
+            seed: None,
+            thinking: None,
             metadata: std::collections::HashMap::new(),
+            extra: std::collections::HashMap::new(),
         })
     }
 
@@ -132,11 +154,41 @@ impl FormatParser for GeminiParser {
             .as_array()
             .and_then(|a| a.first());
 
-        let delta_content = candidate
+        let mut delta_content_parts: Vec<String> = Vec::new();
+        let mut delta_tool_calls: Vec<IrToolCallDelta> = Vec::new();
+
+        if let Some(parts) = candidate
             .and_then(|c| c["content"]["parts"].as_array())
-            .and_then(|parts| parts.first())
-            .and_then(|part| part["text"].as_str())
-            .map(String::from);
+        {
+            for (idx, part) in parts.iter().enumerate() {
+                if let Some(text) = part["text"].as_str() {
+                    delta_content_parts.push(text.to_string());
+                }
+
+                if let Some(func_call) = part.get("functionCall") {
+                    let name = func_call["name"].as_str().unwrap_or("").to_string();
+                    let args = func_call["args"].clone();
+                    delta_tool_calls.push(IrToolCallDelta {
+                        index: idx as u32,
+                        id: Some(format!("call_{}_{}", name, idx)),
+                        name: Some(name),
+                        arguments: Some(serde_json::to_string(&args).unwrap_or_default()),
+                    });
+                }
+            }
+        }
+
+        let delta_content = if delta_content_parts.is_empty() {
+            None
+        } else {
+            Some(delta_content_parts.join(""))
+        };
+
+        let delta_tool_calls = if delta_tool_calls.is_empty() {
+            None
+        } else {
+            Some(delta_tool_calls)
+        };
 
         let finish_reason = candidate
             .and_then(|c| c["finishReason"].as_str())
@@ -154,7 +206,8 @@ impl FormatParser for GeminiParser {
             id: None,
             model: None,
             delta_content,
-            delta_tool_calls: None,
+            delta_tool_calls,
+            delta_thinking: None,
             finish_reason,
             usage,
         }))
@@ -170,7 +223,7 @@ impl FormatParser for GeminiParser {
         let mut tool_calls = Vec::new();
 
         if let Some(parts) = candidate["content"]["parts"].as_array() {
-            for part in parts {
+            for (idx, part) in parts.iter().enumerate() {
                 if let Some(text) = part["text"].as_str() {
                     content_parts.push(IrContentPart::Text {
                         text: text.to_string(),
@@ -182,7 +235,7 @@ impl FormatParser for GeminiParser {
                     let args = func_call["args"].clone();
 
                     tool_calls.push(IrToolCall {
-                        id: format!("call_{}", name),
+                        id: format!("call_{}_{}", name, idx),
                         name,
                         arguments: serde_json::to_string(&args).unwrap_or_default(),
                     });
@@ -248,7 +301,7 @@ fn parse_gemini_content(content: &Value) -> Result<IrMessage, ProxyError> {
     let mut tool_calls = Vec::new();
 
     if let Some(parts) = content["parts"].as_array() {
-        for part in parts {
+        for (idx, part) in parts.iter().enumerate() {
             if let Some(text) = part["text"].as_str() {
                 content_parts.push(IrContentPart::Text {
                     text: text.to_string(),
@@ -263,12 +316,20 @@ fn parse_gemini_content(content: &Value) -> Result<IrMessage, ProxyError> {
                 });
             }
 
+            if let Some(file_data) = part.get("fileData") {
+                content_parts.push(IrContentPart::Image {
+                    url: file_data["fileUri"].as_str().map(String::from),
+                    data: None,
+                    media_type: file_data["mimeType"].as_str().map(String::from),
+                });
+            }
+
             if let Some(func_call) = part.get("functionCall") {
                 let name = func_call["name"].as_str().unwrap_or("").to_string();
                 let args = func_call["args"].clone();
 
                 tool_calls.push(IrToolCall {
-                    id: format!("call_{}", name),
+                    id: format!("call_{}_{}", name, idx),
                     name,
                     arguments: serde_json::to_string(&args).unwrap_or_default(),
                 });
@@ -280,8 +341,9 @@ fn parse_gemini_content(content: &Value) -> Result<IrMessage, ProxyError> {
                     serde_json::to_string(&func_resp["response"]).unwrap_or_default();
 
                 content_parts.push(IrContentPart::ToolResult {
-                    tool_use_id: name,
+                    tool_use_id: name.clone(),
                     content: response_content,
+                    tool_name: Some(name),
                 });
             }
         }
