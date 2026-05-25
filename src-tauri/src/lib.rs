@@ -8,6 +8,7 @@ mod interceptor;
 mod usage;
 mod logging;
 mod server;
+mod apps;
 
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
