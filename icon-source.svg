@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f172a"/>
+      <stop offset="100%" style="stop-color:#1e293b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#38bdf8"/>
+      <stop offset="100%" style="stop-color:#818cf8"/>
+    </linearGradient>
+  </defs>
+  <!-- Dark rounded square -->
+  <rect x="64" y="64" width="896" height="896" rx="192" ry="192" fill="url(#bg)"/>
+  <!-- Shield / proxy shape -->
+  <path d="M512 200 L720 300 L720 520 C720 660 630 760 512 820 C394 760 304 660 304 520 L304 300 Z"
+        fill="none" stroke="url(#accent)" stroke-width="40" stroke-linejoin="round"/>
+  <!-- Lightning bolt (fast forwarding) -->
+  <path d="M540 320 L440 500 L510 500 L480 700 L600 470 L530 470 Z"
+        fill="url(#accent)"/>
+</svg>
