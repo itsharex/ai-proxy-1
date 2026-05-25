@@ -20,7 +20,7 @@ pub async fn create_server(host: &str, port: u16) -> Router {
     app
 }
 
-pub async fn start_server(host: &str, port: u16) {
+pub async fn start_server(host: &str, port: u16, mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
     let app = create_server(host, port).await;
 
     let addr = SocketAddr::new(
@@ -38,7 +38,14 @@ pub async fn start_server(host: &str, port: u16) {
         }
     };
 
-    if let Err(e) = axum::serve(listener, app).await {
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown_rx.changed().await.ok();
+        })
+        .await
+    {
         tracing::error!("HTTP server error: {}", e);
     }
+
+    info!("HTTP server stopped");
 }
