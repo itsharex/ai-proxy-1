@@ -85,3 +85,25 @@ export type RuleAction =
   | { type: 'inject_system_prompt'; text: string }
   | { type: 'override_parameter'; key: string; value: unknown }
   | { type: 'filter_response'; pattern: string; replacement: string }
+
+export type AppType = 'codex_cli' | 'codex_desktop' | 'claude_cli' | 'claude_desktop'
+
+export interface AppConfig {
+  app_type: AppType
+  installed: boolean
+  install_path: string | null
+  config_path: string | null
+  model: string | null
+  proxy_url: string | null
+  launched_at: string | null
+  status: 'success' | 'config_error' | 'launch_error' | null
+}
+
+export interface LaunchRequest {
+  app_type: AppType
+  model: string
+}
+
+export interface SetPathRequest {
+  install_path: string
+}

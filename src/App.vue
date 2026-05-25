@@ -47,6 +47,7 @@ import {
   GitBranchOutline,
   DocumentTextOutline,
   BarChartOutline,
+  AppsOutline,
   SettingsOutline,
 } from '@vicons/ionicons5'
 
@@ -76,6 +77,7 @@ const menuOptions = [
   { label: '模型总览', key: '/models', icon: renderIcon(GitBranchOutline) },
   { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
   { label: '用量统计', key: '/statistics', icon: renderIcon(BarChartOutline) },
+  { label: '应用管理', key: '/apps', icon: renderIcon(AppsOutline) },
   { label: '设置', key: '/settings', icon: renderIcon(SettingsOutline) },
 ]
 
