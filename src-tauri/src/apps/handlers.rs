@@ -114,6 +114,7 @@ pub async fn launch_app(
 
     let settings_map: HashMap<String, String> = proxy_settings.into_iter().collect();
     let host = settings_map.get("http_host").cloned().unwrap_or_else(|| "127.0.0.1".into());
+    let host = if host == "0.0.0.0" { "127.0.0.1".to_string() } else { host };
     let port = settings_map.get("http_port").cloned().unwrap_or_else(|| "7860".into());
     let proxy_base = format!("http://{}:{}", host, port);
 

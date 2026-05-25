@@ -67,7 +67,7 @@ pub async fn write_codex_config(model: &str, proxy_base: &str) -> Result<PathBuf
     );
     config.insert(
         "openai_base_url".to_string(),
-        toml::Value::String(format!("{}{}", proxy_base, "/v1")),
+        toml::Value::String(proxy_base.to_string()),
     );
 
     let content =
