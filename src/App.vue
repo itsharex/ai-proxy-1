@@ -1,5 +1,5 @@
 <template>
-  <n-config-provider>
+  <n-config-provider :locale="zhCN" :date-locale="dateZhCN">
     <n-message-provider>
     <n-layout style="height: 100vh" has-sider>
       <n-layout-sider
@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { ref, computed, h, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { NIcon } from 'naive-ui'
+import { NIcon, zhCN, dateZhCN } from 'naive-ui'
 import { initApi, getProxyPort, isInitialized } from './api'
 import {
   HomeOutline,
