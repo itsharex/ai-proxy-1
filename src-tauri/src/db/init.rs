@@ -53,6 +53,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 005: add cached_tokens and ttft_ms");
     }
 
+    // Migration 006: app_configs table
+    let has_app_configs: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='app_configs'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_app_configs {
+        let migration6 = include_str!("../../migrations/006_app_configs.sql");
+        sqlx::query(migration6).execute(pool).await?;
+        info!("Applied migration 006: app_configs table");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }
