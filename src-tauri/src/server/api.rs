@@ -20,6 +20,7 @@ use crate::converter::parsers::responses::ResponsesParser;
 use crate::converter::{FormatGenerator, FormatParser};
 use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
+use crate::apps::handlers;
 
 // --- Unified response types ---
 
@@ -39,7 +40,7 @@ pub fn ok<T: Serialize>(data: T) -> Json<ApiResponse<T>> {
     Json(ApiResponse { success: true, data })
 }
 
-fn err_json(msg: impl Into<String>) -> Json<ApiError> {
+pub fn err_json(msg: impl Into<String>) -> Json<ApiError> {
     Json(ApiError { success: false, error: msg.into() })
 }
 
@@ -793,4 +794,7 @@ pub fn api_routes() -> axum::Router {
         .route("/rules", axum::routing::get(list_rules).post(create_rule))
         .route("/rules/:id", routing::put(update_rule).delete(delete_rule))
         .route("/settings", axum::routing::get(get_settings).put(update_settings))
+        .route("/apps", axum::routing::get(handlers::list_apps))
+        .route("/apps/launch", axum::routing::post(handlers::launch_app))
+        .route("/apps/:app_type/path", axum::routing::put(handlers::set_app_path))
 }
