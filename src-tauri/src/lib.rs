@@ -10,7 +10,7 @@ mod logging;
 mod server;
 
 use tauri::Manager;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
@@ -135,28 +135,8 @@ pub fn run() {
 
             start_proxy();
 
-            let show_item = MenuItem::with_id(app, "show", "Show Window", true, None::<&str>)?;
-            let status_text = {
-                let ctrl = PROXY_CONTROL.lock().unwrap();
-                if ctrl.running {
-                    format!("Proxy :{} running", ctrl.port)
-                } else {
-                    "Proxy stopped".to_string()
-                }
-            };
-            let status_item = MenuItem::with_id(app, "status", &status_text, false, None::<&str>)?;
-            let toggle_text = {
-                let ctrl = PROXY_CONTROL.lock().unwrap();
-                if ctrl.running { "Stop Proxy" } else { "Start Proxy" }
-            };
-            let toggle_item = MenuItem::with_id(app, "toggle", toggle_text, true, None::<&str>)?;
-            let separator = PredefinedMenuItem::separator(app)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-
-            let menu = Menu::with_items(app, &[&show_item, &status_item, &toggle_item, &separator, &quit_item])?;
-
-            let status_for_handler = status_item.clone();
-            let toggle_for_handler = toggle_item.clone();
+            let menu = Menu::with_items(app, &[&quit_item])?;
 
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
 
@@ -166,30 +146,9 @@ pub fn run() {
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| {
-                    match event.id().as_ref() {
-                        "show" => {
-                            show_main_window(app);
-                        }
-                        "toggle" => {
-                            let is_running = {
-                                let ctrl = PROXY_CONTROL.lock().unwrap();
-                                ctrl.running
-                            };
-                            if is_running {
-                                stop_proxy();
-                                let _ = toggle_for_handler.set_text("Start Proxy");
-                                let _ = status_for_handler.set_text("Proxy stopped");
-                            } else {
-                                let (_host, port) = start_proxy();
-                                let _ = toggle_for_handler.set_text("Stop Proxy");
-                                let _ = status_for_handler.set_text(&format!("Proxy :{} running", port));
-                            }
-                        }
-                        "quit" => {
-                            stop_proxy();
-                            app.exit(0);
-                        }
-                        _ => {}
+                    if event.id() == "quit" {
+                        stop_proxy();
+                        app.exit(0);
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
