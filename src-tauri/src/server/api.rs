@@ -8,6 +8,18 @@ use crate::db::get_pool;
 use crate::key::store::encrypt_api_key;
 use crate::provider::endpoint::Provider;
 use crate::provider::manager::ProviderManager;
+use crate::converter::generators::anthropic::AnthropicGenerator;
+use crate::converter::generators::completions::CompletionsGenerator;
+use crate::converter::generators::gemini::GeminiGenerator;
+use crate::converter::generators::responses::ResponsesGenerator;
+use crate::converter::ir::{ClientFormat, IrContentPart, IrMessage, IrRequest, IrRole};
+use crate::converter::parsers::anthropic::AnthropicParser;
+use crate::converter::parsers::completions::CompletionsParser;
+use crate::converter::parsers::gemini::GeminiParser;
+use crate::converter::parsers::responses::ResponsesParser;
+use crate::converter::{FormatGenerator, FormatParser};
+use crate::key::rotation::{KeyRotation, RotationStrategy};
+use crate::key::store::decrypt_api_key;
 
 // --- Unified response types ---
 
@@ -307,6 +319,32 @@ async fn get_usage(
     Ok(ok(UsageSummary { stats, total_cost, total_requests }))
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct UsageTrendPoint {
+    date: String,
+    model: String,
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
+}
+
+async fn get_usage_trend(
+    Query(query): Query<UsageQuery>,
+) -> Result<Json<ApiResponse<Vec<UsageTrendPoint>>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    let rows: Vec<(String, String, i64, i64, i64)> = sqlx::query_as(
+        "SELECT DATE(bucket_minute), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
+         FROM usage_stats WHERE bucket_minute >= datetime('now', ? || ' days') \
+         GROUP BY DATE(bucket_minute), model ORDER BY DATE(bucket_minute) ASC, model ASC"
+    )
+    .bind(format!("-{}", query.days))
+    .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
+
+    Ok(ok(rows.into_iter().map(|(date, model, prompt_tokens, completion_tokens, total_tokens)| {
+        UsageTrendPoint { date, model, prompt_tokens, completion_tokens, total_tokens }
+    }).collect()))
+}
+
 // --- Rule handlers ---
 
 use crate::interceptor::rules::InterceptorRule;
@@ -470,6 +508,238 @@ async fn update_settings(
     Ok(ok(()))
 }
 
+// --- Model test handlers ---
+
+#[derive(Deserialize)]
+struct TestModelBody {
+    model_name: String,
+}
+
+#[derive(Serialize)]
+struct TestModelResult {
+    success: bool,
+    message: String,
+    response_text: Option<String>,
+    duration_ms: Option<i64>,
+    error: Option<String>,
+}
+
+fn get_generator(format: &ClientFormat) -> Box<dyn FormatGenerator> {
+    match format {
+        ClientFormat::Completions => Box::new(CompletionsGenerator),
+        ClientFormat::Responses => Box::new(ResponsesGenerator),
+        ClientFormat::Anthropic => Box::new(AnthropicGenerator),
+        ClientFormat::Gemini => Box::new(GeminiGenerator),
+    }
+}
+
+fn get_parser(format: &ClientFormat) -> Box<dyn FormatParser> {
+    match format {
+        ClientFormat::Completions => Box::new(CompletionsParser),
+        ClientFormat::Responses => Box::new(ResponsesParser),
+        ClientFormat::Anthropic => Box::new(AnthropicParser),
+        ClientFormat::Gemini => Box::new(GeminiParser),
+    }
+}
+
+async fn test_model(
+    axum::Json(body): axum::Json<TestModelBody>,
+) -> Result<Json<ApiResponse<TestModelResult>>, Json<ApiError>> {
+    let start = std::time::Instant::now();
+
+    let route = match ProviderManager::find_for_model(&body.model_name).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "路由解析失败".into(),
+                response_text: None,
+                duration_ms: None,
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let selected_key = match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
+        Ok(k) => k,
+        Err(e) => {
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "未找到可用的 API Key".into(),
+                response_text: None,
+                duration_ms: None,
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let nonce_slice = selected_key.nonce;
+    let mut nonce_array = [0u8; 12];
+    if nonce_slice.len() == 12 {
+        nonce_array.copy_from_slice(&nonce_slice);
+    } else {
+        return Ok(ok(TestModelResult {
+            success: false,
+            message: "Nonce 格式错误".into(),
+            response_text: None,
+            duration_ms: None,
+            error: Some("invalid nonce length".into()),
+        }));
+    }
+
+    let api_key = match decrypt_api_key(&selected_key.encrypted_key, &nonce_array) {
+        Ok(k) => k,
+        Err(e) => {
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "API Key 解密失败".into(),
+                response_text: None,
+                duration_ms: None,
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let ir_request = IrRequest {
+        model: route.target_model.clone(),
+        messages: vec![IrMessage {
+            role: IrRole::User,
+            content: vec![IrContentPart::Text { text: "Hi, reply with 'OK'.".into() }],
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }],
+        tools: None,
+        tool_choice: None,
+        temperature: Some(0.0),
+        top_p: None,
+        top_k: None,
+        max_tokens: Some(32),
+        stream: false,
+        stop_sequences: None,
+        response_format: None,
+        presence_penalty: None,
+        frequency_penalty: None,
+        seed: None,
+        thinking: None,
+        metadata: HashMap::new(),
+        extra: HashMap::new(),
+    };
+
+    let generator = get_generator(&route.target_format);
+    let target_body = match generator.generate_request(&ir_request) {
+        Ok(b) => b,
+        Err(e) => {
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "请求格式转换失败".into(),
+                response_text: None,
+                duration_ms: None,
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let url = format!("{}{}", route.base_url.trim_end_matches('/'), route.endpoint_path);
+
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+
+    let mut req_builder = http_client
+        .post(&url)
+        .json(&target_body)
+        .header("Content-Type", "application/json");
+
+    match route.target_format {
+        ClientFormat::Anthropic => {
+            req_builder = req_builder.header("x-api-key", &api_key);
+        }
+        _ => {
+            req_builder = req_builder.bearer_auth(&api_key);
+        }
+    }
+
+    let resp = match req_builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let duration = start.elapsed().as_millis() as i64;
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "请求上游供应商失败".into(),
+                response_text: None,
+                duration_ms: Some(duration),
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let status = resp.status();
+    let resp_body = match resp.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            return Ok(ok(TestModelResult {
+                success: false,
+                message: "读取响应失败".into(),
+                response_text: None,
+                duration_ms: Some(start.elapsed().as_millis() as i64),
+                error: Some(e.to_string()),
+            }));
+        }
+    };
+
+    let duration = start.elapsed().as_millis() as i64;
+
+    if !status.is_success() {
+        return Ok(ok(TestModelResult {
+            success: false,
+            message: format!("上游返回错误状态: {}", status),
+            response_text: None,
+            duration_ms: Some(duration),
+            error: Some(resp_body.chars().take(500).collect()),
+        }));
+    }
+
+    let resp_value: serde_json::Value = match serde_json::from_str(&resp_body) {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(ok(TestModelResult {
+                success: true,
+                message: "请求成功（非 JSON 响应）".into(),
+                response_text: Some(resp_body.chars().take(200).collect()),
+                duration_ms: Some(duration),
+                error: None,
+            }));
+        }
+    };
+
+    let parser = get_parser(&route.target_format);
+    let response_text = match parser.parse_response(&resp_value) {
+        Ok(ir_resp) => {
+            let mut text_parts: Vec<String> = Vec::new();
+            for part in &ir_resp.message.content {
+                if let IrContentPart::Text { text } = part {
+                    text_parts.push(text.clone());
+                }
+            }
+            if text_parts.is_empty() { None } else { Some(text_parts.join("")) }
+        }
+        Err(_) => {
+            Some(resp_body.chars().take(200).collect())
+        }
+    };
+
+    Ok(ok(TestModelResult {
+        success: true,
+        message: "测试成功".into(),
+        response_text,
+        duration_ms: Some(duration),
+        error: None,
+    }))
+}
+
 // --- Route registration ---
 
 pub fn api_routes() -> axum::Router {
@@ -479,6 +749,8 @@ pub fn api_routes() -> axum::Router {
         .route("/logs", axum::routing::get(list_logs))
         .route("/logs/:id", axum::routing::get(get_log))
         .route("/usage", axum::routing::get(get_usage))
+        .route("/usage/trend", axum::routing::get(get_usage_trend))
+        .route("/models/test", axum::routing::post(test_model))
         .route("/rules", axum::routing::get(list_rules).post(create_rule))
         .route("/rules/:id", routing::put(update_rule).delete(delete_rule))
         .route("/settings", axum::routing::get(get_settings).put(update_settings))

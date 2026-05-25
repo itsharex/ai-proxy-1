@@ -54,6 +54,14 @@ export interface UsageSummary {
   request_count: number
 }
 
+export interface UsageTrendPoint {
+  date: string
+  model: string
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+}
+
 export interface InterceptorRule {
   id: string
   name: string

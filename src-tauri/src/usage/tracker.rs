@@ -1,5 +1,6 @@
 use crate::db::get_pool;
 use crate::error::ProxyError;
+use super::pricing::PricingTable;
 
 pub struct UsageTracker;
 
@@ -9,7 +10,8 @@ impl UsageTracker {
         let now = chrono::Utc::now();
         let bucket = now.format("%Y-%m-%d %H:%M:00").to_string();
         let total = prompt_tokens + completion_tokens;
-        let cost = (prompt_tokens as f64 * 0.003 + completion_tokens as f64 * 0.006) / 1000.0;
+        let pricing = PricingTable::default();
+        let cost = pricing.get_cost(model, prompt_tokens as u32, completion_tokens as u32);
 
         sqlx::query(
             "INSERT INTO usage_stats (model, provider_name, prompt_tokens, completion_tokens, total_tokens, cost_estimate, request_count, bucket_minute) VALUES (?, ?, ?, ?, ?, ?, 1, ?)"

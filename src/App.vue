@@ -48,7 +48,6 @@ import {
   DocumentTextOutline,
   BarChartOutline,
   SettingsOutline,
-  FilterOutline,
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -75,7 +74,6 @@ const menuOptions = [
   { label: '仪表盘', key: '/', icon: renderIcon(HomeOutline) },
   { label: '供应商', key: '/providers', icon: renderIcon(ServerOutline) },
   { label: '模型总览', key: '/models', icon: renderIcon(GitBranchOutline) },
-  { label: '拦截规则', key: '/rules', icon: renderIcon(FilterOutline) },
   { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
   { label: '用量统计', key: '/statistics', icon: renderIcon(BarChartOutline) },
   { label: '设置', key: '/settings', icon: renderIcon(SettingsOutline) },

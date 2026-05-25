@@ -6,15 +6,43 @@
       </template>
       <n-data-table :columns="columns" :data="allModels" />
     </n-card>
+
+    <n-modal v-model:show="showModal" preset="card" title="模型测试" style="width: 500px">
+      <n-spin :show="testing">
+        <template v-if="testResult">
+          <n-result :status="testResult.success ? 'success' : 'error'"
+            :title="testResult.message"
+          >
+            <template #footer>
+              <n-descriptions label-placement="left" bordered :column="1" size="small">
+                <n-descriptions-item v-if="testResult.duration_ms != null" label="响应时间">
+                  {{ testResult.duration_ms }}ms
+                </n-descriptions-item>
+                <n-descriptions-item v-if="testResult.response_text" label="模型回复">
+                  {{ testResult.response_text }}
+                </n-descriptions-item>
+                <n-descriptions-item v-if="testResult.error" label="错误信息">
+                  <n-text type="error">{{ testResult.error }}</n-text>
+                </n-descriptions-item>
+              </n-descriptions>
+            </template>
+          </n-result>
+        </template>
+        <template v-else>
+          <n-text depth="3">正在测试模型: {{ testingModel }}</n-text>
+        </template>
+      </n-spin>
+    </n-modal>
   </n-space>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
-import { NTag } from 'naive-ui'
+import { NTag, NButton, useMessage } from 'naive-ui'
 import { api } from '../api'
 import type { Provider } from '../types'
 
+const message = useMessage()
 const providers = ref<Provider[]>([])
 
 interface FlatModel {
@@ -24,6 +52,19 @@ interface FlatModel {
   provider_format: string
   enabled: boolean
 }
+
+interface TestResult {
+  success: boolean
+  message: string
+  response_text: string | null
+  duration_ms: number | null
+  error: string | null
+}
+
+const showModal = ref(false)
+const testing = ref(false)
+const testingModel = ref('')
+const testResult = ref<TestResult | null>(null)
 
 const allModels = computed<FlatModel[]>(() => {
   const models: FlatModel[] = []
@@ -69,7 +110,44 @@ const columns = [
       })
     },
   },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 80,
+    render(row: FlatModel) {
+      return h(NButton, {
+        size: 'small',
+        type: 'primary',
+        secondary: true,
+        onClick: () => handleTest(row.model_name),
+      }, { default: () => '测试' })
+    },
+  },
 ]
+
+async function handleTest(modelName: string) {
+  testingModel.value = modelName
+  testResult.value = null
+  testing.value = true
+  showModal.value = true
+
+  try {
+    testResult.value = await api<TestResult>('/api/models/test', {
+      method: 'POST',
+      body: JSON.stringify({ model_name: modelName }),
+    })
+  } catch (e) {
+    testResult.value = {
+      success: false,
+      message: '请求失败',
+      response_text: null,
+      duration_ms: null,
+      error: e instanceof Error ? e.message : String(e),
+    }
+  } finally {
+    testing.value = false
+  }
+}
 
 async function loadData() {
   try {

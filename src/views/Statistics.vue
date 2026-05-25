@@ -41,6 +41,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { api } from '../api'
 import * as echarts from 'echarts'
+import type { UsageTrendPoint } from '../types'
 
 interface UsageStat {
   model: string
@@ -104,18 +105,31 @@ function getDaysFromRange(range: 'today' | 'week' | 'month'): number {
   }
 }
 
-function buildLineChartOptions(data: UsageStat[]) {
-  const modelMap = new Map<string, { date: string; tokens: number }[]>()
-  data.forEach((item) => {
-    if (!modelMap.has(item.model)) {
-      modelMap.set(item.model, [])
+function buildLineChartOptions(data: UsageTrendPoint[]) {
+  if (data.length === 0) {
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: {},
+      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+      xAxis: { type: 'category', boundaryGap: false, data: [] },
+      yAxis: { type: 'value', name: 'Tokens' },
+      series: [],
     }
-  })
+  }
 
-  const models = Array.from(modelMap.keys())
-  const dates = data.length > 0
-    ? [data[0].model]
-    : []
+  const dateSet = new Set<string>()
+  const modelSet = new Set<string>()
+  data.forEach(item => {
+    dateSet.add(item.date)
+    modelSet.add(item.model)
+  })
+  const dates = Array.from(dateSet).sort()
+  const models = Array.from(modelSet)
+
+  const lookup = new Map<string, number>()
+  data.forEach(item => {
+    lookup.set(`${item.date}|${item.model}`, item.total_tokens)
+  })
 
   return {
     tooltip: { trigger: 'axis' },
@@ -124,16 +138,14 @@ function buildLineChartOptions(data: UsageStat[]) {
     xAxis: {
       type: 'category',
       boundaryGap: false,
-      data: dates.length > 0 ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] : [],
+      data: dates,
     },
     yAxis: { type: 'value', name: 'Tokens' },
-    series: models.map((model) => ({
+    series: models.map(model => ({
       name: model,
       type: 'line',
       smooth: true,
-      data: data
-        .filter((d) => d.model === model)
-        .map((d) => d.total_tokens),
+      data: dates.map(date => lookup.get(`${date}|${model}`) ?? 0),
     })),
   }
 }
@@ -164,29 +176,36 @@ function buildPieChartOptions(data: UsageStat[]) {
   }
 }
 
-function updateCharts(data: UsageStat[]) {
-  if (lineChart) {
-    lineChart.setOption(buildLineChartOptions(data))
-  }
-  if (pieChart) {
-    pieChart.setOption(buildPieChartOptions(data))
-  }
-}
-
 async function fetchStats() {
   try {
     const days = getDaysFromRange(timeRange.value)
     const result = await api<UsageResponse>(`/api/usage?days=${days}`)
     stats.value = result.stats
     await nextTick()
-    updateCharts(stats.value)
+    if (pieChart) {
+      pieChart.setOption(buildPieChartOptions(stats.value))
+    }
   } catch (error) {
     console.error('Failed to load usage stats:', error)
   }
 }
 
+async function fetchTrend() {
+  try {
+    const days = getDaysFromRange(timeRange.value)
+    const data = await api<UsageTrendPoint[]>(`/api/usage/trend?days=${days}`)
+    await nextTick()
+    if (lineChart) {
+      lineChart.setOption(buildLineChartOptions(data))
+    }
+  } catch (error) {
+    console.error('Failed to load usage trend:', error)
+  }
+}
+
 function handleRangeChange() {
   fetchStats()
+  fetchTrend()
 }
 
 function handleResize() {
@@ -202,7 +221,8 @@ onMounted(async () => {
   if (pieChartRef.value) {
     pieChart = echarts.init(pieChartRef.value)
   }
-  await fetchStats()
+  fetchStats()
+  fetchTrend()
   window.addEventListener('resize', handleResize)
 })
 

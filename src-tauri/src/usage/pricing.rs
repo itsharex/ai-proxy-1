@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-#[allow(dead_code)]
 pub struct PricingTable {
     prices: HashMap<String, (f64, f64)>, // (prompt_per_1k, completion_per_1k)
 }
@@ -19,7 +18,6 @@ impl Default for PricingTable {
 }
 
 impl PricingTable {
-    #[allow(dead_code)]
     pub fn get_cost(&self, model: &str, prompt_tokens: u32, completion_tokens: u32) -> f64 {
         if let Some((pp, cp)) = self.prices.get(model) {
             (prompt_tokens as f64 * pp + completion_tokens as f64 * cp) / 1000.0
