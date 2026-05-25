@@ -191,6 +191,8 @@ struct LogQuery {
     #[serde(default = "default_limit")]
     limit: i64,
     model: Option<String>,
+    start_date: Option<String>,
+    end_date: Option<String>,
 }
 
 fn default_page() -> i64 { 1 }
@@ -208,31 +210,50 @@ async fn list_logs(
     let pool = get_pool().await;
     let offset = (query.page - 1).max(0) * query.limit;
 
-    let (count_sql, data_sql, model_param) = if let Some(ref model) = query.model {
-        (
-            "SELECT COUNT(*) FROM request_logs WHERE model LIKE ?".to_string(),
-            "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs WHERE model LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?".to_string(),
-            Some(format!("%{}%", model)),
-        )
+    let mut conditions: Vec<String> = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+
+    if let Some(ref model) = query.model {
+        if !model.trim().is_empty() {
+            conditions.push("model LIKE ?".to_string());
+            params.push(format!("%{}%", model.trim()));
+        }
+    }
+
+    if let Some(ref start) = query.start_date {
+        conditions.push("created_at >= ?".to_string());
+        params.push(start.clone());
+    }
+
+    if let Some(ref end) = query.end_date {
+        if let Ok(d) = chrono::NaiveDate::parse_from_str(end, "%Y-%m-%d") {
+            let next = (d + chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+            conditions.push("created_at < ?".to_string());
+            params.push(next);
+        }
+    }
+
+    let select_cols = "id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at";
+    let where_clause = if conditions.is_empty() {
+        String::new()
     } else {
-        (
-            "SELECT COUNT(*) FROM request_logs".to_string(),
-            "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?".to_string(),
-            None,
-        )
+        format!(" WHERE {}", conditions.join(" AND "))
     };
 
-    let total: (i64,) = if let Some(ref pattern) = model_param {
-        sqlx::query_as(&count_sql).bind(pattern).fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?
-    } else {
-        sqlx::query_as(&count_sql).fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?
-    };
+    let count_sql = format!("SELECT COUNT(*) FROM request_logs{}", where_clause);
+    let data_sql = format!("SELECT {} FROM request_logs{} ORDER BY id DESC LIMIT ? OFFSET ?", select_cols, where_clause);
 
-    let rows: Vec<(i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String)> = if let Some(ref pattern) = model_param {
-        sqlx::query_as(&data_sql).bind(pattern).bind(query.limit).bind(offset).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
-    } else {
-        sqlx::query_as(&data_sql).bind(query.limit).bind(offset).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
-    };
+    let mut count_q = sqlx::query_as::<_, (i64,)>(&count_sql);
+    let mut data_q = sqlx::query_as::<_, (i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String)>(&data_sql);
+
+    for p in &params {
+        count_q = count_q.bind(p);
+        data_q = data_q.bind(p);
+    }
+    data_q = data_q.bind(query.limit).bind(offset);
+
+    let total: (i64,) = count_q.fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?;
+    let rows = data_q.fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let logs = rows.into_iter().map(|(id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at)| {
         LogEntry {
@@ -268,6 +289,15 @@ async fn get_log(
         total_tokens: row.11.unwrap_or(0), error_message: row.12,
         cached_tokens: row.13.unwrap_or(0), ttft_ms: row.14, created_at: row.15,
     }))
+}
+
+async fn clear_logs() -> Result<Json<ApiResponse<serde_json::Value>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    sqlx::query("DELETE FROM request_logs")
+        .execute(pool)
+        .await
+        .map_err(|e| err_json(e.to_string()))?;
+    Ok(ok(serde_json::json!({ "deleted": true })))
 }
 
 // --- Usage handlers ---
@@ -746,7 +776,7 @@ pub fn api_routes() -> axum::Router {
     axum::Router::new()
         .route("/providers", axum::routing::get(list_providers).post(create_provider))
         .route("/providers/:id", routing::put(update_provider).delete(delete_provider))
-        .route("/logs", axum::routing::get(list_logs))
+        .route("/logs", axum::routing::get(list_logs).delete(clear_logs))
         .route("/logs/:id", axum::routing::get(get_log))
         .route("/usage", axum::routing::get(get_usage))
         .route("/usage/trend", axum::routing::get(get_usage_trend))

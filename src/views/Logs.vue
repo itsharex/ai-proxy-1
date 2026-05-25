@@ -2,15 +2,25 @@
   <n-space vertical size="large">
     <n-card>
       <template #header>
-        <n-space justify="space-between" align="center">
-          <n-text strong>请求日志</n-text>
+        <n-text strong>请求日志</n-text>
+      </template>
+      <template #header-extra>
+        <n-space align="center">
           <n-input
             v-model:value="searchQuery"
             placeholder="按模型名搜索"
             clearable
-            style="width: 260px"
-            @update:value="handleSearch"
+            style="width: 220px"
+            @keyup.enter="handleQuery"
           />
+          <n-date-picker
+            v-model:value="dateRange"
+            type="daterange"
+            clearable
+            style="width: 280px"
+          />
+          <n-button type="primary" @click="handleQuery">查询</n-button>
+          <n-button type="error" @click="handleClearLogs">清除日志</n-button>
         </n-space>
       </template>
       <n-data-table
@@ -36,6 +46,7 @@ import type { RequestLog } from '../types'
 const loading = ref(false)
 const logs = ref<RequestLog[]>([])
 const searchQuery = ref('')
+const dateRange = ref<[number, number] | null>(null)
 const currentPage = ref(1)
 const pageSize = ref(10)
 const total = ref(0)
@@ -117,7 +128,7 @@ function handlePageSizeChange(size: number) {
   fetchLogs()
 }
 
-function handleSearch() {
+function handleQuery() {
   currentPage.value = 1
   fetchLogs()
 }
@@ -129,6 +140,12 @@ async function fetchLogs() {
     if (searchQuery.value.trim()) {
       url += `&model=${encodeURIComponent(searchQuery.value.trim())}`
     }
+    if (dateRange.value) {
+      const start = new Date(dateRange.value[0])
+      const end = new Date(dateRange.value[1])
+      url += `&start_date=${formatDate(start)}`
+      url += `&end_date=${formatDate(end)}`
+    }
     const result = await api<{ logs: RequestLog[]; total: number }>(url)
     logs.value = result.logs
     total.value = result.total
@@ -136,6 +153,24 @@ async function fetchLogs() {
     console.error('Failed to load logs:', error)
   } finally {
     loading.value = false
+  }
+}
+
+function formatDate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+async function handleClearLogs() {
+  if (!window.confirm('确定要清除所有日志吗？此操作不可恢复。')) return
+  try {
+    await api<{ deleted: boolean }>('/api/logs', { method: 'DELETE' })
+    logs.value = []
+    total.value = 0
+  } catch (error) {
+    console.error('Failed to clear logs:', error)
   }
 }
 
