@@ -239,6 +239,7 @@ impl FormatParser for AnthropicParser {
                         prompt_tokens: 0,
                         completion_tokens: u["output_tokens"].as_u64()? as u32,
                         total_tokens: u["output_tokens"].as_u64()? as u32,
+                        cached_tokens: 0,
                     })
                 });
 
@@ -262,6 +263,7 @@ impl FormatParser for AnthropicParser {
                         prompt_tokens: u["input_tokens"].as_u64()? as u32,
                         completion_tokens: 0,
                         total_tokens: u["input_tokens"].as_u64()? as u32,
+                        cached_tokens: 0,
                     })
                 });
 
@@ -362,11 +364,13 @@ impl FormatParser for AnthropicParser {
                 completion_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
                 total_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32
                     + u["output_tokens"].as_u64().unwrap_or(0) as u32,
+                cached_tokens: 0,
             })
             .unwrap_or(IrUsage {
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 total_tokens: 0,
+                cached_tokens: 0,
             });
 
         Ok(IrResponse {

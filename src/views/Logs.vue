@@ -60,46 +60,50 @@ function statusCodeColor(code: number): 'success' | 'warning' | 'error' {
 
 const columns = [
   { title: '时间', key: 'created_at', width: 180 },
-  { title: '模型', key: 'model', width: 160 },
-  { title: '供应商', key: 'provider_name', width: 120 },
+  { title: '模型', key: 'model', width: 140 },
+  { title: '供应商', key: 'provider_name', width: 100 },
   {
     title: '客户端格式',
     key: 'client_format',
-    width: 110,
+    width: 100,
     render: (row: RequestLog) =>
       h(NTag, { size: 'small', type: 'info' }, () => row.client_format),
   },
   {
     title: '供应商格式',
     key: 'provider_format',
-    width: 110,
+    width: 100,
     render: (row: RequestLog) =>
       h(NTag, { size: 'small', type: 'warning' }, () => row.provider_format),
   },
   {
     title: '状态码',
     key: 'status_code',
-    width: 90,
+    width: 80,
     render: (row: RequestLog) => {
       const code = row.status_code ?? 0
       return h(NTag, { size: 'small', type: statusCodeColor(code) }, () => String(code))
     },
   },
+  { title: '输入Token', key: 'prompt_tokens', width: 90 },
+  { title: '缓存Token', key: 'cached_tokens', width: 90 },
+  { title: '输出Token', key: 'completion_tokens', width: 90 },
+  {
+    title: '用时/首字',
+    key: 'ttft_ms',
+    width: 100,
+    render: (row: RequestLog) => row.ttft_ms != null ? `${row.ttft_ms}ms` : '-',
+  },
   {
     title: '延迟(ms)',
     key: 'duration_ms',
-    width: 100,
+    width: 90,
     render: (row: RequestLog) => row.duration_ms != null ? `${row.duration_ms}ms` : '-',
-  },
-  {
-    title: 'Token 总量',
-    key: 'total_tokens',
-    width: 100,
   },
   {
     title: '流式',
     key: 'stream',
-    width: 70,
+    width: 60,
     render: (row: RequestLog) =>
       h(NTag, { size: 'small', type: row.stream ? 'success' : 'default' }, () => (row.stream ? '是' : '否')),
   },

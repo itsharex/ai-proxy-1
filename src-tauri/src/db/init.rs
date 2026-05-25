@@ -39,6 +39,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 004: drop auth columns");
     }
 
+    // Migration 005: add cached_tokens and ttft_ms columns
+    let has_ttft: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('request_logs') WHERE name = 'ttft_ms'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_ttft {
+        let migration5 = include_str!("../../migrations/005_add_cache_ttft.sql");
+        sqlx::query(migration5).execute(pool).await?;
+        info!("Applied migration 005: add cached_tokens and ttft_ms");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }

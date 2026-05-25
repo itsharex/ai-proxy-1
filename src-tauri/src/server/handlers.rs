@@ -206,6 +206,8 @@ async fn handle_proxy(
                 Some(err.to_string().as_str()),
                 0,
                 0,
+                0,
+                None,
             )
             .await;
             return err.into_response();
@@ -262,6 +264,7 @@ async fn handle_proxy(
 
         let prompt_tokens = ir_response.usage.prompt_tokens as i64;
         let completion_tokens = ir_response.usage.completion_tokens as i64;
+        let cached_tokens = ir_response.usage.cached_tokens as i64;
 
         let _ = log_request_entry(
             &request_id,
@@ -274,6 +277,8 @@ async fn handle_proxy(
             None,
             prompt_tokens,
             completion_tokens,
+            cached_tokens,
+            Some(start.elapsed().as_millis() as i64),
         )
         .await;
 
@@ -300,7 +305,9 @@ async fn handle_proxy(
             let mut buffer = String::new();
             let mut total_prompt = 0u32;
             let mut total_completion = 0u32;
+            let mut total_cached = 0u32;
             let mut reader = stream;
+            let mut ttft_ms: Option<i64> = None;
 
             // State machine for Responses SSE events
             let mut output_index: usize = 0;
@@ -357,6 +364,11 @@ async fn handle_proxy(
                     if let Some(usage) = &ir_chunk.usage {
                         total_prompt += usage.prompt_tokens;
                         total_completion += usage.completion_tokens;
+                        total_cached += usage.cached_tokens;
+                    }
+
+                    if ttft_ms.is_none() && (ir_chunk.delta_content.is_some() || ir_chunk.delta_tool_calls.is_some()) {
+                        ttft_ms = Some(start.elapsed().as_millis() as i64);
                     }
 
                     // Handle tool call deltas
@@ -567,6 +579,7 @@ async fn handle_proxy(
             let elapsed = start.elapsed().as_millis() as i64;
             let pt = total_prompt as i64;
             let ct = total_completion as i64;
+            let cache_t = total_cached as i64;
 
             let _ = log_request_entry(
                 &request_id,
@@ -579,6 +592,8 @@ async fn handle_proxy(
                 None,
                 pt,
                 ct,
+                cache_t,
+                ttft_ms,
             )
             .await;
 
@@ -785,6 +800,8 @@ async fn log_request_entry(
     error_message: Option<&str>,
     prompt_tokens: i64,
     completion_tokens: i64,
+    cached_tokens: i64,
+    ttft_ms: Option<i64>,
 ) -> Result<(), ProxyError> {
     log_request(
         request_id,
@@ -797,6 +814,8 @@ async fn log_request_entry(
         error_message,
         prompt_tokens,
         completion_tokens,
+        cached_tokens,
+        ttft_ms,
     )
     .await
 }

@@ -166,6 +166,8 @@ struct LogEntry {
     prompt_tokens: i64,
     completion_tokens: i64,
     total_tokens: i64,
+    cached_tokens: i64,
+    ttft_ms: Option<i64>,
     error_message: Option<String>,
     created_at: String,
 }
@@ -196,19 +198,21 @@ async fn list_logs(
     let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM request_logs")
         .fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?;
 
-    let rows: Vec<(i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, String)> = sqlx::query_as(
-        "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, created_at FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?",
+    let rows: Vec<(i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String)> = sqlx::query_as(
+        "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?",
     )
     .bind(query.limit).bind(offset)
     .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
-    let logs = rows.into_iter().map(|(id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, created_at)| {
+    let logs = rows.into_iter().map(|(id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at)| {
         LogEntry {
             id, request_id, client_format, provider_name, provider_format, model,
             stream: stream != 0, status_code, duration_ms,
             prompt_tokens: prompt_tokens.unwrap_or(0),
             completion_tokens: completion_tokens.unwrap_or(0),
             total_tokens: total_tokens.unwrap_or(0),
+            cached_tokens: cached_tokens.unwrap_or(0),
+            ttft_ms,
             error_message, created_at,
         }
     }).collect();
@@ -220,8 +224,8 @@ async fn get_log(
     Path(id): Path<i64>,
 ) -> Result<Json<ApiResponse<LogEntry>>, Json<ApiError>> {
     let pool = get_pool().await;
-    let row: (i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, String) = sqlx::query_as(
-        "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, created_at FROM request_logs WHERE id = ?",
+    let row: (i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String) = sqlx::query_as(
+        "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?;
@@ -231,7 +235,8 @@ async fn get_log(
         provider_format: row.4, model: row.5, stream: row.6 != 0,
         status_code: row.7, duration_ms: row.8,
         prompt_tokens: row.9.unwrap_or(0), completion_tokens: row.10.unwrap_or(0),
-        total_tokens: row.11.unwrap_or(0), error_message: row.12, created_at: row.13,
+        total_tokens: row.11.unwrap_or(0), error_message: row.12,
+        cached_tokens: row.13.unwrap_or(0), ttft_ms: row.14, created_at: row.15,
     }))
 }
 

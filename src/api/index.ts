@@ -4,10 +4,6 @@ let baseUrl = ''
 let proxyPort = 7860
 let initialized = false
 
-async function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms))
-}
-
 async function tryFetchHealth(url: string): Promise<boolean> {
   try {
     const res = await fetch(url)
@@ -18,26 +14,31 @@ async function tryFetchHealth(url: string): Promise<boolean> {
 }
 
 export async function initApi(): Promise<void> {
-  const configUrl = await invoke<string>('get_api_config')
-  const parsedUrl = new URL(configUrl)
-  proxyPort = parseInt(parsedUrl.port) || 7860
-
+  // Try relative URL first (works through Vite proxy in dev mode)
   for (let i = 0; i < 10; i++) {
-    // Dev mode: relative URL through Vite proxy
     if (await tryFetchHealth('/health')) {
       baseUrl = ''
       initialized = true
+      // Try to get port from Tauri backend (non-blocking)
+      try {
+        const configUrl = await invoke<string>('get_api_config')
+        proxyPort = parseInt(new URL(configUrl).port) || 7860
+      } catch { /* ignore */ }
       return
     }
 
-    // Production mode: absolute URL
-    if (await tryFetchHealth(`${configUrl}/health`)) {
-      baseUrl = configUrl
-      initialized = true
-      return
-    }
+    // Fallback: try absolute URL via Tauri config
+    try {
+      const configUrl = await invoke<string>('get_api_config')
+      if (await tryFetchHealth(`${configUrl}/health`)) {
+        baseUrl = configUrl
+        proxyPort = parseInt(new URL(configUrl).port) || 7860
+        initialized = true
+        return
+      }
+    } catch { /* invoke failed, skip */ }
 
-    if (i < 9) await sleep(500)
+    await new Promise(r => setTimeout(r, 500))
   }
 
   throw new Error('Proxy server not reachable')

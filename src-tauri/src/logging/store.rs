@@ -12,12 +12,14 @@ pub async fn log_request(
     error_message: Option<&str>,
     prompt_tokens: i64,
     completion_tokens: i64,
+    cached_tokens: i64,
+    ttft_ms: Option<i64>,
 ) -> Result<(), ProxyError> {
     let pool = get_pool().await;
     let total = prompt_tokens + completion_tokens;
 
     sqlx::query(
-        "INSERT INTO request_logs (request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO request_logs (request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(request_id)
     .bind(client_format)
@@ -31,6 +33,8 @@ pub async fn log_request(
     .bind(completion_tokens)
     .bind(total)
     .bind(error_message)
+    .bind(cached_tokens)
+    .bind(ttft_ms)
     .execute(pool)
     .await?;
 

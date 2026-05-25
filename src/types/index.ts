@@ -38,6 +38,8 @@ export interface RequestLog {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cached_tokens: number
+  ttft_ms: number | null
   error_message: string | null
   created_at: string
 }
