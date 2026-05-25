@@ -156,3 +156,54 @@ async fn launch_desktop(install_path: &str) -> Result<(), String> {
         Err("Unsupported platform for desktop app launch".to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_install_path_custom_takes_priority() {
+        let result = resolve_install_path(&AppType::CodexCli, Some("/custom/path"));
+        assert_eq!(result, Some("/custom/path".to_string()));
+    }
+
+    #[test]
+    fn test_resolve_install_path_empty_returns_none() {
+        let result = resolve_install_path(&AppType::CodexCli, Some(""));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_resolve_install_path_none_returns_none() {
+        let result = resolve_install_path(&AppType::CodexCli, None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_app_type_display() {
+        assert_eq!(AppType::CodexCli.to_string(), "codex_cli");
+        assert_eq!(AppType::ClaudeDesktop.to_string(), "claude_desktop");
+    }
+
+    #[test]
+    fn test_app_type_is_cli() {
+        assert!(AppType::CodexCli.is_cli());
+        assert!(AppType::ClaudeCli.is_cli());
+        assert!(!AppType::CodexDesktop.is_cli());
+        assert!(!AppType::ClaudeDesktop.is_cli());
+    }
+
+    #[test]
+    fn test_app_type_is_codex() {
+        assert!(AppType::CodexCli.is_codex());
+        assert!(AppType::CodexDesktop.is_codex());
+        assert!(!AppType::ClaudeCli.is_codex());
+        assert!(!AppType::ClaudeDesktop.is_codex());
+    }
+
+    #[test]
+    fn test_app_type_from_str() {
+        assert_eq!(AppType::from_str("codex_cli"), Some(AppType::CodexCli));
+        assert_eq!(AppType::from_str("unknown"), None);
+    }
+}

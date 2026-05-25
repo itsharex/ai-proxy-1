@@ -184,7 +184,7 @@ pub async fn write_config(
     }
 }
 
-async fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
+pub(crate) async fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
     let tmp_path = path.with_extension("tmp");
     tokio::fs::write(&tmp_path, content)
         .await
@@ -193,4 +193,131 @@ async fn atomic_write(path: &PathBuf, content: &str) -> Result<(), String> {
         .await
         .map_err(|e| format!("Failed to rename temp file: {}", e))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_toml_config_serialization() {
+        let mut config: HashMap<String, toml::Value> = HashMap::new();
+        config.insert(
+            "model".to_string(),
+            toml::Value::String("gpt-4".to_string()),
+        );
+        config.insert(
+            "openai_base_url".to_string(),
+            toml::Value::String("http://127.0.0.1:7860/v1".to_string()),
+        );
+
+        let output = toml::to_string_pretty(&config).expect("Failed to serialize");
+
+        assert!(output.contains("model = \"gpt-4\""));
+        assert!(output.contains("openai_base_url = \"http://127.0.0.1:7860/v1\""));
+    }
+
+    #[test]
+    fn test_toml_config_preserves_existing() {
+        let initial = r#"approval_policy = "on-request""#;
+        let mut config: HashMap<String, toml::Value> =
+            toml::from_str(initial).expect("Failed to parse initial TOML");
+
+        config.insert(
+            "model".to_string(),
+            toml::Value::String("gpt-4".to_string()),
+        );
+        config.insert(
+            "openai_base_url".to_string(),
+            toml::Value::String("http://127.0.0.1:7860/v1".to_string()),
+        );
+
+        let output = toml::to_string_pretty(&config).expect("Failed to serialize");
+
+        assert!(
+            output.contains("approval_policy = \"on-request\""),
+            "original field should be preserved"
+        );
+        assert!(output.contains("model = \"gpt-4\""));
+        assert!(output.contains("openai_base_url = \"http://127.0.0.1:7860/v1\""));
+    }
+
+    #[test]
+    fn test_json_config_serialization() {
+        let initial = r#"{"language":"Chinese","env":{"ANTHROPIC_API_KEY":"sk-xxx"}}"#;
+        let mut config: serde_json::Value =
+            serde_json::from_str(initial).expect("Failed to parse initial JSON");
+
+        let env = config
+            .as_object_mut()
+            .unwrap()
+            .entry("env")
+            .or_insert_with(|| serde_json::Value::Object(Default::default()));
+
+        if let Some(env_obj) = env.as_object_mut() {
+            env_obj.insert(
+                "ANTHROPIC_BASE_URL".to_string(),
+                serde_json::Value::String("http://127.0.0.1:7860".to_string()),
+            );
+            env_obj.insert(
+                "ANTHROPIC_MODEL".to_string(),
+                serde_json::Value::String("claude-sonnet-4-20250514".to_string()),
+            );
+        }
+
+        let output = serde_json::to_string_pretty(&config).expect("Failed to serialize");
+
+        assert!(output.contains("\"language\": \"Chinese\""));
+        assert!(output.contains("\"ANTHROPIC_API_KEY\": \"sk-xxx\""));
+        assert!(output.contains("\"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:7860\""));
+        assert!(output.contains("\"ANTHROPIC_MODEL\": \"claude-sonnet-4-20250514\""));
+    }
+
+    #[test]
+    fn test_json_config_creates_env_if_missing() {
+        let initial = r#"{"language":"Chinese"}"#;
+        let mut config: serde_json::Value =
+            serde_json::from_str(initial).expect("Failed to parse initial JSON");
+
+        let env = config
+            .as_object_mut()
+            .unwrap()
+            .entry("env")
+            .or_insert_with(|| serde_json::Value::Object(Default::default()));
+
+        if let Some(env_obj) = env.as_object_mut() {
+            env_obj.insert(
+                "ANTHROPIC_BASE_URL".to_string(),
+                serde_json::Value::String("http://127.0.0.1:7860".to_string()),
+            );
+            env_obj.insert(
+                "ANTHROPIC_MODEL".to_string(),
+                serde_json::Value::String("claude-sonnet-4-20250514".to_string()),
+            );
+        }
+
+        let output = serde_json::to_string_pretty(&config).expect("Failed to serialize");
+
+        assert!(output.contains("\"language\": \"Chinese\""));
+        assert!(output.contains("\"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:7860\""));
+        assert!(output.contains("\"ANTHROPIC_MODEL\": \"claude-sonnet-4-20250514\""));
+    }
+
+    #[tokio::test]
+    async fn test_atomic_write() {
+        let dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let file_path = PathBuf::from(dir.path()).join("test_config.toml");
+        let content = "model = \"gpt-4\"\nopenai_base_url = \"http://127.0.0.1:7860/v1\"\n";
+
+        atomic_write(&file_path, content)
+            .await
+            .expect("atomic_write failed");
+
+        let read_back = tokio::fs::read_to_string(&file_path)
+            .await
+            .expect("Failed to read back file");
+
+        assert_eq!(read_back, content);
+    }
 }
