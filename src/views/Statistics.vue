@@ -4,11 +4,14 @@
       <template #header>
         <n-space justify="space-between" align="center">
           <n-text strong>用量统计</n-text>
-          <n-radio-group v-model:value="timeRange" size="small" @update:value="handleRangeChange">
-            <n-radio-button value="today">今日</n-radio-button>
-            <n-radio-button value="week">本周</n-radio-button>
-            <n-radio-button value="month">本月</n-radio-button>
-          </n-radio-group>
+          <n-space align="center">
+            <n-radio-group v-model:value="timeRange" size="small" @update:value="handleRangeChange">
+              <n-radio-button value="today">今日</n-radio-button>
+              <n-radio-button value="week">本周</n-radio-button>
+              <n-radio-button value="month">本月</n-radio-button>
+            </n-radio-group>
+            <n-button type="error" size="small" @click="handleClearUsage">清除统计</n-button>
+          </n-space>
         </n-space>
       </template>
 
@@ -206,6 +209,18 @@ async function fetchTrend() {
 function handleRangeChange() {
   fetchStats()
   fetchTrend()
+}
+
+async function handleClearUsage() {
+  if (!window.confirm('确定要清除所有用量统计吗？此操作不可恢复。')) return
+  try {
+    await api<{ deleted: boolean }>('/api/usage', { method: 'DELETE' })
+    stats.value = []
+    if (lineChart) lineChart.setOption(buildLineChartOptions([]))
+    if (pieChart) pieChart.setOption(buildPieChartOptions([]))
+  } catch (error) {
+    console.error('Failed to clear usage:', error)
+  }
 }
 
 function handleResize() {

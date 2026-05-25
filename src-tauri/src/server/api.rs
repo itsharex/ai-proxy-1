@@ -375,6 +375,15 @@ async fn get_usage_trend(
     }).collect()))
 }
 
+async fn clear_usage() -> Result<Json<ApiResponse<serde_json::Value>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    sqlx::query("DELETE FROM usage_stats")
+        .execute(pool)
+        .await
+        .map_err(|e| err_json(e.to_string()))?;
+    Ok(ok(serde_json::json!({ "deleted": true })))
+}
+
 // --- Rule handlers ---
 
 use crate::interceptor::rules::InterceptorRule;
@@ -778,7 +787,7 @@ pub fn api_routes() -> axum::Router {
         .route("/providers/:id", routing::put(update_provider).delete(delete_provider))
         .route("/logs", axum::routing::get(list_logs).delete(clear_logs))
         .route("/logs/:id", axum::routing::get(get_log))
-        .route("/usage", axum::routing::get(get_usage))
+        .route("/usage", axum::routing::get(get_usage).delete(clear_usage))
         .route("/usage/trend", axum::routing::get(get_usage_trend))
         .route("/models/test", axum::routing::post(test_model))
         .route("/rules", axum::routing::get(list_rules).post(create_rule))
