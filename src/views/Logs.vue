@@ -37,7 +37,7 @@ const loading = ref(false)
 const logs = ref<RequestLog[]>([])
 const searchQuery = ref('')
 const currentPage = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(10)
 const total = ref(0)
 
 const pagination = computed(() => ({
@@ -46,6 +46,7 @@ const pagination = computed(() => ({
   itemCount: total.value,
   showSizePicker: true,
   pageSizes: [10, 20, 50, 100],
+  prefix: ({ itemCount }: { itemCount: number }) => `共 ${itemCount} 条`,
 }))
 
 function statusCodeColor(code: number): 'success' | 'warning' | 'error' {
