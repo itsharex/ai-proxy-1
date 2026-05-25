@@ -12,9 +12,6 @@
         @collapse="collapsed = true"
         @expand="collapsed = false"
       >
-        <div style="padding: 16px; text-align: center;">
-          <n-text v-if="!collapsed" strong style="font-size: 16px;">AI Proxy</n-text>
-        </div>
         <n-menu
           :collapsed="collapsed"
           :collapsed-width="64"
