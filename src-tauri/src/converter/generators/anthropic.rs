@@ -245,11 +245,24 @@ impl FormatGenerator for AnthropicGenerator {
             }
         }
 
-        if content.is_empty() {
+        if content.is_empty() && ir.message.tool_calls.is_none() {
             content.push(json!({
                 "type": "text",
                 "text": "",
             }));
+        }
+
+        // Add tool_calls as tool_use content blocks
+        if let Some(tool_calls) = &ir.message.tool_calls {
+            for tc in tool_calls {
+                let input: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Object(serde_json::Map::new()));
+                content.push(json!({
+                    "type": "tool_use",
+                    "id": tc.id,
+                    "name": tc.name,
+                    "input": input,
+                }));
+            }
         }
 
         let stop_reason = match ir.finish_reason.as_deref() {

@@ -58,7 +58,7 @@ impl FormatParser for AnthropicParser {
             .ok_or_else(|| ProxyError::Parse("missing 'messages' field".into()))?;
 
         for msg in msg_array {
-            messages.push(parse_anthropic_message(msg)?);
+            messages.extend(parse_anthropic_message(msg)?);
         }
 
         let tools = body["tools"].as_array().map(|arr| {
@@ -383,7 +383,7 @@ impl FormatParser for AnthropicParser {
     }
 }
 
-fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
+fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
     let role_str = msg["role"]
         .as_str()
         .ok_or_else(|| ProxyError::Parse("message missing 'role'".into()))?;
@@ -396,69 +396,81 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
         }
     };
 
-    let mut content_parts = Vec::new();
-    let mut tool_calls = Vec::new();
+    // Assistant messages: parse tool_use and content, return single message
+    if role == IrRole::Assistant {
+        let mut content_parts = Vec::new();
+        let mut tool_calls = Vec::new();
+
+        if let Some(content) = msg.get("content") {
+            if let Some(text) = content.as_str() {
+                if !text.is_empty() {
+                    content_parts.push(IrContentPart::Text { text: text.to_string() });
+                }
+            } else if let Some(arr) = content.as_array() {
+                for part in arr {
+                    let part_type = part["type"].as_str().unwrap_or("text");
+                    match part_type {
+                        "text" => {
+                            if let Some(text) = part["text"].as_str() {
+                                content_parts.push(IrContentPart::Text { text: text.to_string() });
+                            }
+                        }
+                        "thinking" => {
+                            if let Some(text) = part["thinking"].as_str() {
+                                content_parts.push(IrContentPart::Thinking { text: text.to_string() });
+                            }
+                        }
+                        "tool_use" => {
+                            let call_id = part["id"].as_str().unwrap_or("").to_string();
+                            let name = part["name"].as_str().unwrap_or("").to_string();
+                            let input = part["input"].clone();
+                            tool_calls.push(IrToolCall {
+                                id: call_id,
+                                name,
+                                arguments: serde_json::to_string(&input).unwrap_or_default(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        return Ok(vec![IrMessage {
+            role: IrRole::Assistant,
+            content: content_parts,
+            name: None,
+            tool_call_id: None,
+            tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+        }]);
+    }
+
+    // User messages: split tool_result into separate Tool-role messages
+    let mut results: Vec<IrMessage> = Vec::new();
+    let mut pending_user_parts: Vec<IrContentPart> = Vec::new();
 
     if let Some(content) = msg.get("content") {
         if let Some(text) = content.as_str() {
             if !text.is_empty() {
-                content_parts.push(IrContentPart::Text {
-                    text: text.to_string(),
-                });
+                pending_user_parts.push(IrContentPart::Text { text: text.to_string() });
             }
         } else if let Some(arr) = content.as_array() {
             for part in arr {
                 let part_type = part["type"].as_str().unwrap_or("text");
 
                 match part_type {
-                    "text" => {
-                        if let Some(text) = part["text"].as_str() {
-                            content_parts.push(IrContentPart::Text {
-                                text: text.to_string(),
-                            });
-                        }
-                    }
-                    "thinking" => {
-                        if let Some(text) = part["thinking"].as_str() {
-                            content_parts.push(IrContentPart::Thinking {
-                                text: text.to_string(),
-                            });
-                        }
-                    }
-                    "image" => {
-                        let source = &part["source"];
-                        let source_type = source["type"].as_str().unwrap_or("");
-
-                        match source_type {
-                            "base64" => {
-                                content_parts.push(IrContentPart::Image {
-                                    url: None,
-                                    data: source["data"].as_str().map(String::from),
-                                    media_type: source["media_type"].as_str().map(String::from),
-                                });
-                            }
-                            "url" => {
-                                content_parts.push(IrContentPart::Image {
-                                    url: source["url"].as_str().map(String::from),
-                                    data: None,
-                                    media_type: None,
-                                });
-                            }
-                            _ => {}
-                        }
-                    }
-                    "tool_use" => {
-                        let call_id = part["id"].as_str().unwrap_or("").to_string();
-                        let name = part["name"].as_str().unwrap_or("").to_string();
-                        let input = part["input"].clone();
-
-                        tool_calls.push(IrToolCall {
-                            id: call_id,
-                            name,
-                            arguments: serde_json::to_string(&input).unwrap_or_default(),
-                        });
-                    }
                     "tool_result" => {
+                        // Flush pending user text as a separate message
+                        if !pending_user_parts.is_empty() {
+                            results.push(IrMessage {
+                                role: IrRole::User,
+                                content: std::mem::take(&mut pending_user_parts),
+                                name: None,
+                                tool_call_id: None,
+                                tool_calls: None,
+                            });
+                        }
+
                         let tool_use_id = part["tool_use_id"]
                             .as_str()
                             .unwrap_or("")
@@ -466,8 +478,8 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
 
                         let result_content = if let Some(text) = part["content"].as_str() {
                             text.to_string()
-                        } else if let Some(arr) = part["content"].as_array() {
-                            arr.iter()
+                        } else if let Some(c_arr) = part["content"].as_array() {
+                            c_arr.iter()
                                 .filter_map(|p| {
                                     if p["type"].as_str() == Some("text") {
                                         p["text"].as_str().map(String::from)
@@ -481,11 +493,39 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
                             String::new()
                         };
 
-                        content_parts.push(IrContentPart::ToolResult {
-                            tool_use_id,
-                            content: result_content,
-                            tool_name: None,
+                        results.push(IrMessage {
+                            role: IrRole::Tool,
+                            content: vec![IrContentPart::Text { text: result_content }],
+                            name: None,
+                            tool_call_id: Some(tool_use_id),
+                            tool_calls: None,
                         });
+                    }
+                    "text" => {
+                        if let Some(text) = part["text"].as_str() {
+                            pending_user_parts.push(IrContentPart::Text { text: text.to_string() });
+                        }
+                    }
+                    "image" => {
+                        let source = &part["source"];
+                        let source_type = source["type"].as_str().unwrap_or("");
+                        match source_type {
+                            "base64" => {
+                                pending_user_parts.push(IrContentPart::Image {
+                                    url: None,
+                                    data: source["data"].as_str().map(String::from),
+                                    media_type: source["media_type"].as_str().map(String::from),
+                                });
+                            }
+                            "url" => {
+                                pending_user_parts.push(IrContentPart::Image {
+                                    url: source["url"].as_str().map(String::from),
+                                    data: None,
+                                    media_type: None,
+                                });
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }
@@ -493,15 +533,26 @@ fn parse_anthropic_message(msg: &Value) -> Result<IrMessage, ProxyError> {
         }
     }
 
-    Ok(IrMessage {
-        role,
-        content: content_parts,
-        name: None,
-        tool_call_id: None,
-        tool_calls: if tool_calls.is_empty() {
-            None
-        } else {
-            Some(tool_calls)
-        },
-    })
+    // Flush remaining text parts as a final user message
+    if !pending_user_parts.is_empty() {
+        results.push(IrMessage {
+            role: IrRole::User,
+            content: pending_user_parts,
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
+    if results.is_empty() {
+        results.push(IrMessage {
+            role: IrRole::User,
+            content: vec![],
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        });
+    }
+
+    Ok(results)
 }
