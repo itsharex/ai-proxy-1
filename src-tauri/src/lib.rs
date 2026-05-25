@@ -15,6 +15,9 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
+const DEFAULT_PROXY_PORT: u16 = 7860;
+const DEFAULT_PROXY_HOST: &str = "127.0.0.1";
+
 static APP_RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
 
 struct ProxyControl {
@@ -27,32 +30,39 @@ struct ProxyControl {
 static PROXY_CONTROL: Lazy<Mutex<ProxyControl>> = Lazy::new(|| {
     Mutex::new(ProxyControl {
         running: false,
-        port: 7860,
-        host: "127.0.0.1".to_string(),
+        port: DEFAULT_PROXY_PORT,
+        host: DEFAULT_PROXY_HOST.to_string(),
         shutdown_tx: None,
     })
 });
 
-#[tauri::command]
-async fn get_api_config() -> String {
+async fn get_proxy_config() -> (String, u16) {
     let pool = db::get_pool().await;
     let host: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_host'")
         .fetch_one(pool)
         .await
-        .unwrap_or_else(|_| "127.0.0.1".to_string());
+        .unwrap_or_else(|_| DEFAULT_PROXY_HOST.to_string());
     let pool = db::get_pool().await;
-    let port: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_port'")
+    let port_str: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_port'")
         .fetch_one(pool)
         .await
-        .unwrap_or_else(|_| "7860".to_string());
+        .unwrap_or_else(|_| DEFAULT_PROXY_PORT.to_string());
+    (host, port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
+}
+
+#[tauri::command]
+async fn get_api_config() -> String {
+    let (host, port) = get_proxy_config().await;
     format!("http://{}:{}", host, port)
 }
 
-fn start_proxy() {
+fn start_proxy() -> (String, u16) {
     {
         let ctrl = PROXY_CONTROL.lock().unwrap();
         if ctrl.running {
-            return;
+            let host = ctrl.host.clone();
+            let port = ctrl.port;
+            return (host, port);
         }
     }
 
@@ -61,35 +71,26 @@ fn start_proxy() {
         guard.as_ref().expect("runtime not initialized").handle().clone()
     };
 
-    let (host, port) = handle.block_on(async {
-        let pool = db::get_pool().await;
-        let host: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_host'")
-            .fetch_one(pool)
-            .await
-            .unwrap_or_else(|_| "127.0.0.1".to_string());
-        let pool = db::get_pool().await;
-        let port_str: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_port'")
-            .fetch_one(pool)
-            .await
-            .unwrap_or_else(|_| "7860".to_string());
-        (host, port_str.parse().unwrap_or(7860u16))
-    });
-
     let (tx, rx) = tokio::sync::watch::channel(false);
 
-    {
-        let mut ctrl = PROXY_CONTROL.lock().unwrap();
-        ctrl.running = true;
-        ctrl.host = host.clone();
-        ctrl.port = port;
-        ctrl.shutdown_tx = Some(tx);
-    }
-
     handle.spawn(async move {
+        let (host, port) = get_proxy_config().await;
+
+        {
+            let mut ctrl = PROXY_CONTROL.lock().unwrap();
+            ctrl.running = true;
+            ctrl.host = host.clone();
+            ctrl.port = port;
+            ctrl.shutdown_tx = Some(tx);
+        }
+
         server::start_server(&host, port, rx).await;
+
         let mut ctrl = PROXY_CONTROL.lock().unwrap();
         ctrl.running = false;
     });
+
+    (DEFAULT_PROXY_HOST.to_string(), DEFAULT_PROXY_PORT)
 }
 
 fn stop_proxy() {
@@ -101,6 +102,13 @@ fn stop_proxy() {
         let _ = tx.send(true);
     }
     ctrl.running = false;
+}
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -160,10 +168,7 @@ pub fn run() {
                 .on_menu_event(move |app, event| {
                     match event.id().as_ref() {
                         "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
+                            show_main_window(app);
                         }
                         "toggle" => {
                             let is_running = {
@@ -175,16 +180,13 @@ pub fn run() {
                                 let _ = toggle_for_handler.set_text("Start Proxy");
                                 let _ = status_for_handler.set_text("Proxy stopped");
                             } else {
-                                start_proxy();
-                                let port = {
-                                    let ctrl = PROXY_CONTROL.lock().unwrap();
-                                    ctrl.port
-                                };
+                                let (_host, port) = start_proxy();
                                 let _ = toggle_for_handler.set_text("Stop Proxy");
                                 let _ = status_for_handler.set_text(&format!("Proxy :{} running", port));
                             }
                         }
                         "quit" => {
+                            stop_proxy();
                             app.exit(0);
                         }
                         _ => {}
@@ -198,10 +200,7 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(app);
                     }
                 })
                 .build(app)?;
