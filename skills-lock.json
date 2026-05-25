@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "computer-use": {
+      "source": "oil-oil/computer-use-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "5405adefa07f92dba271abea115fe997e35c54a4abde70ac1dc56e2da1e35d63"
+    }
+  }
+}
