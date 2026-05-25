@@ -178,6 +178,7 @@ struct LogQuery {
     page: i64,
     #[serde(default = "default_limit")]
     limit: i64,
+    model: Option<String>,
 }
 
 fn default_page() -> i64 { 1 }
@@ -195,14 +196,31 @@ async fn list_logs(
     let pool = get_pool().await;
     let offset = (query.page - 1).max(0) * query.limit;
 
-    let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM request_logs")
-        .fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?;
+    let (count_sql, data_sql, model_param) = if let Some(ref model) = query.model {
+        (
+            "SELECT COUNT(*) FROM request_logs WHERE model LIKE ?".to_string(),
+            "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs WHERE model LIKE ? ORDER BY id DESC LIMIT ? OFFSET ?".to_string(),
+            Some(format!("%{}%", model)),
+        )
+    } else {
+        (
+            "SELECT COUNT(*) FROM request_logs".to_string(),
+            "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?".to_string(),
+            None,
+        )
+    };
 
-    let rows: Vec<(i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String)> = sqlx::query_as(
-        "SELECT id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at FROM request_logs ORDER BY id DESC LIMIT ? OFFSET ?",
-    )
-    .bind(query.limit).bind(offset)
-    .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
+    let total: (i64,) = if let Some(ref pattern) = model_param {
+        sqlx::query_as(&count_sql).bind(pattern).fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?
+    } else {
+        sqlx::query_as(&count_sql).fetch_one(pool).await.map_err(|e| err_json(e.to_string()))?
+    };
+
+    let rows: Vec<(i64, String, String, String, String, String, i32, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<i64>, Option<String>, Option<i64>, Option<i64>, String)> = if let Some(ref pattern) = model_param {
+        sqlx::query_as(&data_sql).bind(pattern).bind(query.limit).bind(offset).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
+    } else {
+        sqlx::query_as(&data_sql).bind(query.limit).bind(offset).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
+    };
 
     let logs = rows.into_iter().map(|(id, request_id, client_format, provider_name, provider_format, model, stream, status_code, duration_ms, prompt_tokens, completion_tokens, total_tokens, error_message, cached_tokens, ttft_ms, created_at)| {
         LogEntry {

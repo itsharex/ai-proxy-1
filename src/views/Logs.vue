@@ -9,17 +9,19 @@
             placeholder="按模型名搜索"
             clearable
             style="width: 260px"
+            @update:value="handleSearch"
           />
         </n-space>
       </template>
       <n-data-table
         :columns="columns"
-        :data="filteredLogs"
+        :data="logs"
         :loading="loading"
         :bordered="false"
         :pagination="pagination"
         :row-key="(row: RequestLog) => row.id"
         @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
       />
     </n-card>
   </n-space>
@@ -35,22 +37,16 @@ const loading = ref(false)
 const logs = ref<RequestLog[]>([])
 const searchQuery = ref('')
 const currentPage = ref(1)
-const pageSize = 20
+const pageSize = ref(20)
+const total = ref(0)
 
 const pagination = computed(() => ({
   page: currentPage.value,
-  pageSize,
-  pageCount: Math.ceil(filteredLogs.value.length / pageSize),
-  showSizePicker: false,
+  pageSize: pageSize.value,
+  itemCount: total.value,
+  showSizePicker: true,
+  pageSizes: [10, 20, 50, 100],
 }))
-
-const filteredLogs = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return logs.value
-  }
-  const query = searchQuery.value.toLowerCase()
-  return logs.value.filter((log) => log.model.toLowerCase().includes(query))
-})
 
 function statusCodeColor(code: number): 'success' | 'warning' | 'error' {
   if (code < 300) return 'success'
@@ -111,15 +107,30 @@ const columns = [
 
 function handlePageChange(page: number) {
   currentPage.value = page
+  fetchLogs()
+}
+
+function handlePageSizeChange(size: number) {
+  pageSize.value = size
+  currentPage.value = 1
+  fetchLogs()
+}
+
+function handleSearch() {
+  currentPage.value = 1
+  fetchLogs()
 }
 
 async function fetchLogs() {
   loading.value = true
   try {
-    const result = await api<{ logs: RequestLog[]; total: number }>(
-      `/api/logs?page=${currentPage.value}&limit=${pageSize}`
-    )
+    let url = `/api/logs?page=${currentPage.value}&limit=${pageSize.value}`
+    if (searchQuery.value.trim()) {
+      url += `&model=${encodeURIComponent(searchQuery.value.trim())}`
+    }
+    const result = await api<{ logs: RequestLog[]; total: number }>(url)
     logs.value = result.logs
+    total.value = result.total
   } catch (error) {
     console.error('Failed to load logs:', error)
   } finally {
