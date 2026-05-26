@@ -71,6 +71,16 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
                     Some(r.status.clone())
                 }
             }).unwrap_or(None),
+            model_haiku: None,
+            model_sonnet: None,
+            model_opus: None,
+            work_dir: db_rec.as_ref().and_then(|r| {
+                if r.work_dir.as_ref().map_or(true, |s| s.is_empty()) {
+                    None
+                } else {
+                    r.work_dir.clone()
+                }
+            }),
         };
 
         result.push(app_config);
@@ -182,6 +192,10 @@ pub async fn launch_app(
         install_path: Some(install_path),
         config_path: Some(config_path),
         model: Some(body.model),
+        model_haiku: body.model_haiku,
+        model_sonnet: body.model_sonnet,
+        model_opus: body.model_opus,
+        work_dir: body.work_dir,
         proxy_url: Some(proxy_url),
         launched_at: Some(now),
         status: Some("success".to_string()),

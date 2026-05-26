@@ -67,6 +67,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 006: app_configs table");
     }
 
+    // Migration 007: add work_dir and model_config columns
+    let has_work_dir: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('app_configs') WHERE name = 'work_dir'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_work_dir {
+        let migration7 = include_str!("../../migrations/007_app_configs_v2.sql");
+        sqlx::query(migration7).execute(pool).await?;
+        info!("Applied migration 007: add work_dir and model_config columns");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }

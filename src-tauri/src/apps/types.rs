@@ -51,6 +51,10 @@ impl AppType {
         matches!(self, AppType::CodexCli | AppType::CodexDesktop)
     }
 
+    pub fn is_claude(&self) -> bool {
+        matches!(self, AppType::ClaudeCli | AppType::ClaudeDesktop)
+    }
+
     pub fn proxy_url_suffix(&self) -> &str {
         if self.is_codex() {
             "/v1"
@@ -76,6 +80,10 @@ pub struct AppConfig {
     pub install_path: Option<String>,
     pub config_path: Option<String>,
     pub model: Option<String>,
+    pub model_haiku: Option<String>,
+    pub model_sonnet: Option<String>,
+    pub model_opus: Option<String>,
+    pub work_dir: Option<String>,
     pub proxy_url: Option<String>,
     pub launched_at: Option<String>,
     pub status: Option<String>,
@@ -85,6 +93,10 @@ pub struct AppConfig {
 pub struct LaunchRequest {
     pub app_type: String,
     pub model: String,
+    pub model_haiku: Option<String>,
+    pub model_sonnet: Option<String>,
+    pub model_opus: Option<String>,
+    pub work_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -101,4 +113,6 @@ pub struct DbAppConfig {
     pub config_path: Option<String>,
     pub install_path: Option<String>,
     pub status: String,
+    pub work_dir: Option<String>,
+    pub model_config: Option<String>,
 }
