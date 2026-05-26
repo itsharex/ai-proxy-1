@@ -32,6 +32,7 @@
         </n-layout-content>
       </n-layout>
     </n-layout>
+    <UpdateNotification ref="updateNotification" />
     </n-message-provider>
   </n-config-provider>
 </template>
@@ -40,7 +41,10 @@
 import { ref, computed, h, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon, zhCN, dateZhCN } from 'naive-ui'
+import { listen } from '@tauri-apps/api/event'
+import { isTauri } from './utils/env'
 import { apiState, initApi } from './api'
+import UpdateNotification from './components/UpdateNotification.vue'
 import {
   HomeOutline,
   ServerOutline,
@@ -56,12 +60,19 @@ const route = useRoute()
 const collapsed = ref(false)
 const serverRunning = computed(() => apiState.initialized)
 const proxyPort = computed(() => apiState.proxyPort)
+const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(null)
 
 onMounted(async () => {
   try {
     await initApi()
   } catch {
     apiState.initialized = false
+  }
+
+  if (isTauri) {
+    listen<{ version: string; release_notes: string; download_url: string; published_at: string }>('update-available', (event) => {
+      updateNotification.value?.show(event.payload)
+    })
   }
 })
 
