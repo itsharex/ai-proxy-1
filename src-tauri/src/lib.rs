@@ -51,10 +51,27 @@ async fn get_proxy_config() -> (String, u16) {
     (host, port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
 }
 
+fn to_connect_host(host: &str) -> String {
+    if host == "0.0.0.0" {
+        "127.0.0.1".to_string()
+    } else {
+        host.to_string()
+    }
+}
+
 #[tauri::command]
 async fn get_api_config() -> String {
     let (host, port) = get_proxy_config().await;
-    format!("http://{}:{}", host, port)
+    format!("http://{}:{}", to_connect_host(&host), port)
+}
+
+#[tauri::command]
+async fn apply_proxy_config() -> String {
+    stop_proxy();
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    start_proxy();
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    get_api_config().await
 }
 
 fn start_proxy() -> (String, u16) {
@@ -172,7 +189,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_api_config])
+        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();

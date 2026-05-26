@@ -37,10 +37,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted, watch } from 'vue'
+import { ref, computed, h, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon, zhCN, dateZhCN } from 'naive-ui'
-import { initApi, getProxyPort, isInitialized } from './api'
+import { apiState, initApi } from './api'
 import {
   HomeOutline,
   ServerOutline,
@@ -54,16 +54,14 @@ import {
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
-const serverRunning = ref(false)
-const proxyPort = ref(7860)
+const serverRunning = computed(() => apiState.initialized)
+const proxyPort = computed(() => apiState.proxyPort)
 
 onMounted(async () => {
   try {
     await initApi()
-    serverRunning.value = true
-    proxyPort.value = getProxyPort()
   } catch {
-    serverRunning.value = false
+    apiState.initialized = false
   }
 })
 
@@ -82,14 +80,6 @@ const menuOptions = [
 ]
 
 const currentPath = computed(() => route.path)
-
-watch(currentPath, () => {
-  const running = isInitialized()
-  serverRunning.value = running
-  if (running) {
-    proxyPort.value = getProxyPort()
-  }
-})
 
 function handleMenuSelect(key: string) {
   router.push(key)

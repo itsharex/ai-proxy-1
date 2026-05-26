@@ -69,9 +69,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
+import { ref, h, onMounted, computed } from 'vue'
 import { NTag } from 'naive-ui'
-import { api } from '../api'
+import { api, apiState } from '../api'
 import type { Provider } from '../types'
 import {
   ServerOutline,
@@ -80,8 +80,8 @@ import {
   PulseOutline,
 } from '@vicons/ionicons5'
 
-const serverRunning = ref(true)
-const proxyPort = ref(7860)
+const serverRunning = computed(() => apiState.initialized)
+const proxyPort = computed(() => apiState.proxyPort)
 const providerCount = ref(0)
 const routeCount = ref(0)
 const todayRequests = ref(0)

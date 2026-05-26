@@ -75,9 +75,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
+import { invoke } from '@tauri-apps/api/core'
 import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
 import { isTauri } from '../utils/env'
-import { api } from '../api'
+import { api, refreshApiConfig } from '../api'
 
 const message = useMessage()
 
@@ -97,6 +98,11 @@ const settings = ref<AppSettings>({
   recordRequestBody: false,
   proxyAuthEnabled: false,
   proxyAuthKey: '',
+})
+
+const savedNetworkConfig = ref({
+  host: settings.value.host,
+  port: settings.value.port,
 })
 
 const autostartEnabled = ref(false)
@@ -119,12 +125,19 @@ async function loadSettings() {
       proxyAuthEnabled: data.proxy_auth_enabled === 'true',
       proxyAuthKey: data.proxy_auth_key,
     }
+    savedNetworkConfig.value = {
+      host: settings.value.host,
+      port: settings.value.port,
+    }
   } catch (error) {
     console.error('Failed to load settings:', error)
   }
 }
 
 async function handleSave() {
+  const previousHost = savedNetworkConfig.value.host
+  const previousPort = savedNetworkConfig.value.port
+
   if (settings.value.proxyAuthEnabled && !settings.value.proxyAuthKey) {
     message.warning('启用认证后必须设置 API Key')
     return
@@ -141,6 +154,19 @@ async function handleSave() {
         proxy_auth_key: settings.value.proxyAuthKey,
       }),
     })
+
+    const hostChanged = settings.value.host !== previousHost
+    const portChanged = settings.value.port !== previousPort
+
+    if (isTauri && (hostChanged || portChanged)) {
+      await invoke<string>('apply_proxy_config')
+      await refreshApiConfig()
+    }
+
+    savedNetworkConfig.value = {
+      host: settings.value.host,
+      port: settings.value.port,
+    }
     message.success('设置已保存')
   } catch (error) {
     message.error(`保存失败: ${error}`)
