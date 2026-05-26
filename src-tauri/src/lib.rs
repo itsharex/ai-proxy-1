@@ -10,6 +10,7 @@ mod logging;
 mod server;
 mod apps;
 mod update;
+mod update_timer;
 
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
@@ -171,6 +172,7 @@ pub fn run() {
             }
 
             start_proxy();
+            update_timer::start_update_timer(app.handle().clone());
 
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_item])?;
