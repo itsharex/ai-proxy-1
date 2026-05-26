@@ -234,6 +234,92 @@ fn completions_tool_calls_request() {
 }
 
 #[test]
+fn responses_json_schema_is_downgraded_to_json_object_for_completions() {
+    let generator = CompletionsGenerator;
+    let mut ir = sample_ir_request();
+    ir.response_format = Some(json!({
+        "type": "json_schema",
+        "name": "codex_output",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "summary": { "type": "string" }
+            },
+            "required": ["summary"]
+        },
+        "strict": true
+    }));
+
+    let body = generator.generate_request(&ir).unwrap();
+    let response_format = body.get("response_format").expect("response_format should exist");
+    assert_eq!(response_format, &json!({ "type": "json_object" }));
+}
+
+#[test]
+fn completions_json_schema_is_downgraded_to_json_object() {
+    let generator = CompletionsGenerator;
+    let mut ir = sample_ir_request();
+    ir.response_format = Some(json!({
+        "type": "json_schema",
+        "json_schema": {
+            "name": "codex_output",
+            "schema": { "type": "object" },
+            "strict": true
+        }
+    }));
+
+    let body = generator.generate_request(&ir).unwrap();
+    let response_format = body.get("response_format").expect("response_format should exist");
+
+    assert_eq!(response_format, &json!({ "type": "json_object" }));
+}
+
+#[test]
+fn invalid_json_schema_response_format_is_downgraded() {
+    let generator = CompletionsGenerator;
+    let mut ir = sample_ir_request();
+    ir.response_format = Some(json!({
+        "type": "json_schema"
+    }));
+
+    let body = generator.generate_request(&ir).unwrap();
+    let response_format = body.get("response_format").expect("response_format should exist");
+    assert_eq!(response_format, &json!({ "type": "json_object" }));
+}
+
+#[test]
+fn responses_parser_json_schema_roundtrip_to_completions() {
+    let parser = ResponsesParser;
+    let generator = CompletionsGenerator;
+    let body = json!({
+        "model": "gpt-5.4",
+        "input": "hello",
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "codex_output",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "summary": { "type": "string" }
+                    },
+                    "required": ["summary"]
+                },
+                "strict": true
+            }
+        }
+    });
+
+    let ir = parser.parse_request(&body).unwrap();
+    let generated = generator.generate_request(&ir).unwrap();
+    let response_format = generated
+        .get("response_format")
+        .expect("response_format should exist");
+
+    assert_eq!(response_format, &json!({ "type": "json_object" }));
+}
+
+#[test]
 fn cross_format_completions_to_anthropic() {
     let ir = sample_ir_request();
 

@@ -175,7 +175,9 @@ impl FormatGenerator for CompletionsGenerator {
         }
 
         if let Some(response_format) = &ir.response_format {
-            body["response_format"] = response_format.clone();
+            if let Some(normalized) = normalize_completions_response_format(response_format) {
+                body["response_format"] = normalized;
+            }
         }
 
         if let Some(pp) = ir.presence_penalty {
@@ -310,6 +312,19 @@ impl FormatGenerator for CompletionsGenerator {
                 "total_tokens": ir.usage.total_tokens,
             }
         }))
+    }
+}
+
+fn normalize_completions_response_format(response_format: &Value) -> Option<Value> {
+    let response_type = response_format.get("type")?.as_str()?;
+
+    match response_type {
+        "json_object" => Some(json!({ "type": "json_object" })),
+        // DeepSeek chat/completions currently supports `json_object`,
+        // but rejects `json_schema` with "This response_format type is unavailable now".
+        // Keep the JSON intent by downgrading schema-based requests to json_object.
+        "json_schema" => Some(json!({ "type": "json_object" })),
+        _ => None,
     }
 }
 
