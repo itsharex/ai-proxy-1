@@ -497,12 +497,14 @@ struct Settings {
     record_request_body: String,
     proxy_auth_enabled: String,
     proxy_auth_key: String,
+    request_timeout: String,
+    connect_timeout: String,
 }
 
 async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_host', 'http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key')"
+        "SELECT key, value FROM settings WHERE key IN ('http_host', 'http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout')"
     ).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let map: HashMap<String, String> = rows.into_iter().collect();
@@ -513,6 +515,8 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
         record_request_body: map.get("record_request_body").cloned().unwrap_or_else(|| "false".into()),
         proxy_auth_enabled: map.get("proxy_auth_enabled").cloned().unwrap_or_else(|| "false".into()),
         proxy_auth_key: map.get("proxy_auth_key").cloned().unwrap_or_default(),
+        request_timeout: map.get("request_timeout").cloned().unwrap_or_else(|| "300".into()),
+        connect_timeout: map.get("connect_timeout").cloned().unwrap_or_else(|| "30".into()),
     }))
 }
 
@@ -524,6 +528,8 @@ struct UpdateSettingsBody {
     record_request_body: Option<String>,
     proxy_auth_enabled: Option<String>,
     proxy_auth_key: Option<String>,
+    request_timeout: Option<String>,
+    connect_timeout: Option<String>,
 }
 
 async fn update_settings(
@@ -537,6 +543,8 @@ async fn update_settings(
         ("record_request_body", body.record_request_body),
         ("proxy_auth_enabled", body.proxy_auth_enabled),
         ("proxy_auth_key", body.proxy_auth_key),
+        ("request_timeout", body.request_timeout),
+        ("connect_timeout", body.connect_timeout),
     ];
     for (key, value) in updates {
         if let Some(v) = value {

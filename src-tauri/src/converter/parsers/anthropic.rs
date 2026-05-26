@@ -244,11 +244,10 @@ impl FormatParser for AnthropicParser {
                     let cached = u["cache_read_input_tokens"].as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
-                    let total_input = input + cached;
                     IrUsage {
-                        prompt_tokens: total_input as u32,
+                        prompt_tokens: input as u32,
                         completion_tokens: output as u32,
-                        total_tokens: (total_input + output) as u32,
+                        total_tokens: (input + output + cached) as u32,
                         cached_tokens: cached as u32,
                     }
                 });
@@ -275,11 +274,10 @@ impl FormatParser for AnthropicParser {
                     let cached = u["cache_read_input_tokens"].as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
-                    let total_input = input + cached;
                     IrUsage {
-                        prompt_tokens: total_input as u32,
+                        prompt_tokens: input as u32,
                         completion_tokens: 0,
-                        total_tokens: total_input as u32,
+                        total_tokens: (input + cached) as u32,
                         cached_tokens: cached as u32,
                     }
                 });
@@ -386,11 +384,10 @@ impl FormatParser for AnthropicParser {
                 let cached = u["cache_read_input_tokens"].as_u64()
                     .or_else(|| u["cached_tokens"].as_u64())
                     .unwrap_or(0);
-                let total_input = input + cached;
                 IrUsage {
-                    prompt_tokens: total_input as u32,
+                    prompt_tokens: input as u32,
                     completion_tokens: output as u32,
-                    total_tokens: (total_input + output) as u32,
+                    total_tokens: (input + output + cached) as u32,
                     cached_tokens: cached as u32,
                 }
             })

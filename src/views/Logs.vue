@@ -55,6 +55,7 @@ const pagination = computed(() => ({
   page: currentPage.value,
   pageSize: pageSize.value,
   itemCount: total.value,
+  remote: true,
   showSizePicker: true,
   pageSizes: [10, 20, 50, 100],
   prefix: ({ itemCount }: { itemCount: number }) => `共 ${itemCount} 条`,
@@ -132,8 +133,9 @@ const columns = [
     key: 'cache_hit',
     width: 80,
     render: (row: RequestLog) => {
-      if (row.prompt_tokens === 0) return '-'
-      const rate = Math.round(row.cached_tokens / row.prompt_tokens * 100)
+      const total = row.prompt_tokens + row.cached_tokens
+      if (total === 0) return '-'
+      const rate = Math.round(row.cached_tokens / total * 100)
       const type = rate >= 50 ? 'success' : rate > 0 ? 'warning' : 'default'
       return h(NTag, { size: 'small', type }, () => `${rate}%`)
     },

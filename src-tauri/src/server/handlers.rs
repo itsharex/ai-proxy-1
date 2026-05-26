@@ -262,9 +262,20 @@ async fn handle_proxy(
 
     info!("Upstream request: {} {}", "POST", url);
 
+    let pool = crate::db::pool::get_pool().await;
+    let (request_timeout_secs, connect_timeout_secs): (u64, u64) = {
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT key, value FROM settings WHERE key IN ('request_timeout', 'connect_timeout')"
+        ).fetch_all(pool).await.unwrap_or_default();
+        let map: HashMap<String, String> = rows.into_iter().collect();
+        let rt = map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(300);
+        let ct = map.get("connect_timeout").and_then(|v| v.parse().ok()).unwrap_or(30);
+        (rt, ct)
+    };
+
     let http_client = Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(request_timeout_secs))
+        .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
         .build()
         .unwrap_or_default();
     let mut req_builder = http_client

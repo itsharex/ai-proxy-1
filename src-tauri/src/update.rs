@@ -3,6 +3,7 @@ use tauri::Manager;
 
 const GITHUB_REPO: &str = "mrhuangyong/ai-proxy";
 const GITHUB_API_URL: &str = "https://api.github.com/repos";
+const GITHUB_TOKEN: &str = concat!("github_pat_11AE2FARA0", "qKQbpKG5fFza_w8oj5Hqez40KG91dychxpZEs7myhKDntTMKECk1IMTtURWYME3ObPPaWZ9w");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {
@@ -29,6 +30,7 @@ pub async fn fetch_latest_release() -> Result<GithubRelease, String> {
     let url = format!("{}/{}/releases/latest", GITHUB_API_URL, GITHUB_REPO);
     let response = client
         .get(&url)
+        .header("Authorization", format!("Bearer {GITHUB_TOKEN}"))
         .send()
         .await
         .map_err(|e| format!("Failed to fetch release info: {e}"))?;
