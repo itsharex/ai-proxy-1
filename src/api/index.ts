@@ -33,7 +33,11 @@ function setApiState(baseUrl: string, port: number, host: string, initialized: b
 async function tryFetchHealth(url: string): Promise<boolean> {
   try {
     const res = await fetch(url)
-    return res.ok
+    if (!res.ok) {
+      return false
+    }
+    const text = await res.text()
+    return text.trim() === 'OK'
   } catch {
     return false
   }
@@ -98,15 +102,26 @@ async function ensureInitialized(): Promise<void> {
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   await ensureInitialized()
 
-  const res = await fetch(buildApiUrl(path), {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  })
+  const requestUrl = buildApiUrl(path)
+  let res: Response
+  try {
+    res = await fetch(requestUrl, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    })
+  } catch (error) {
+    throw error
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
     throw new Error(body.error || `API error: ${res.status}`)
   }
-  const body = await res.json()
+  let body: { success?: boolean; error?: string; data?: T }
+  try {
+    body = await res.json() as { success?: boolean; error?: string; data?: T }
+  } catch (error) {
+    throw error
+  }
   if (!body.success) throw new Error(body.error || 'Unknown error')
   return body.data as T
 }

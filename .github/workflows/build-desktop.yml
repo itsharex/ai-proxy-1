@@ -6,6 +6,9 @@ on:
       - "v*"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build ${{ matrix.platform.name }}
@@ -64,3 +67,38 @@ jobs:
           name: ${{ matrix.platform.artifact_name }}
           path: src-tauri/target/release/bundle
           if-no-files-found: error
+
+  release:
+    name: Publish Release Assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download desktop bundles
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Show downloaded files
+        run: |
+          echo "Downloaded release artifact files:"
+          find release-artifacts -type f | sort
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.app.tar.gz
+            release-artifacts/**/*.app.tar.gz.sig
+            release-artifacts/**/*.msi
+            release-artifacts/**/*.msi.zip
+            release-artifacts/**/*.msi.zip.sig
+            release-artifacts/**/*setup.exe
+            release-artifacts/**/*setup.nsis.zip
+            release-artifacts/**/*setup.nsis.zip.sig
+            release-artifacts/**/*.sig
+            release-artifacts/**/latest*.json
