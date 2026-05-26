@@ -8,6 +8,7 @@ pub async fn log_request(
     provider_format: &str,
     model: &str,
     stream: bool,
+    status_code: u16,
     duration_ms: i64,
     error_message: Option<&str>,
     prompt_tokens: i64,
@@ -27,7 +28,7 @@ pub async fn log_request(
     .bind(provider_format)
     .bind(model)
     .bind(stream as i64)
-    .bind(200i64)
+    .bind(status_code as i64)
     .bind(duration_ms)
     .bind(prompt_tokens)
     .bind(completion_tokens)

@@ -34,6 +34,9 @@
         <n-form-item label="记录请求体">
           <n-switch v-model:value="settings.recordRequestBody" />
         </n-form-item>
+        <n-form-item v-if="isTauri" label="开机启动">
+          <n-switch v-model:value="autostartEnabled" @update:value="handleAutostartChange" />
+        </n-form-item>
 
         <n-divider />
 
@@ -72,6 +75,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
+import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
+import { isTauri } from '../utils/env'
 import { api } from '../api'
 
 const message = useMessage()
@@ -93,6 +98,8 @@ const settings = ref<AppSettings>({
   proxyAuthEnabled: false,
   proxyAuthKey: '',
 })
+
+const autostartEnabled = ref(false)
 
 async function loadSettings() {
   try {
@@ -140,7 +147,26 @@ async function handleSave() {
   }
 }
 
-onMounted(() => {
-  loadSettings()
+async function handleAutostartChange(enabled: boolean) {
+  try {
+    if (enabled) {
+      await enable()
+    } else {
+      await disable()
+    }
+    message.success(enabled ? '已启用开机启动' : '已关闭开机启动')
+  } catch (error) {
+    autostartEnabled.value = !enabled
+    message.error(`设置失败: ${error}`)
+  }
+}
+
+onMounted(async () => {
+  await loadSettings()
+  try {
+    autostartEnabled.value = await isEnabled()
+  } catch {
+    autostartEnabled.value = false
+  }
 })
 </script>

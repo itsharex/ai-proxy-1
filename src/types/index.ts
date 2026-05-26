@@ -94,6 +94,10 @@ export interface AppConfig {
   install_path: string | null
   config_path: string | null
   model: string | null
+  model_haiku: string | null
+  model_sonnet: string | null
+  model_opus: string | null
+  work_dir: string | null
   proxy_url: string | null
   launched_at: string | null
   status: 'success' | 'config_error' | 'launch_error' | null
@@ -102,6 +106,10 @@ export interface AppConfig {
 export interface LaunchRequest {
   app_type: AppType
   model: string
+  model_haiku?: string
+  model_sonnet?: string
+  model_opus?: string
+  work_dir?: string
 }
 
 export interface SetPathRequest {

@@ -40,7 +40,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { api } from '../api'
-import { NTag } from 'naive-ui'
+import { NTag, NSpace } from 'naive-ui'
 import type { RequestLog } from '../types'
 
 const loading = ref(false)
@@ -93,20 +93,37 @@ const columns = [
       return h(NTag, { size: 'small', type: statusCodeColor(code) }, () => String(code))
     },
   },
-  { title: '输入Token', key: 'prompt_tokens', width: 90 },
-  { title: '缓存Token', key: 'cached_tokens', width: 90 },
-  { title: '输出Token', key: 'completion_tokens', width: 90 },
+  {
+    title: '输入/缓存',
+    key: 'prompt_tokens',
+    width: 130,
+    render: (row: RequestLog) =>
+      h(NSpace, { size: 4 }, () => [
+        h(NTag, { size: 'small' }, () => String(row.prompt_tokens)),
+        h(NTag, { size: 'small', type: 'info' }, () => String(row.cached_tokens)),
+      ]),
+  },
+  {
+    title: '命中',
+    key: 'cache_hit',
+    width: 80,
+    render: (row: RequestLog) => {
+      if (row.prompt_tokens === 0) return '-'
+      const rate = Math.round(row.cached_tokens / row.prompt_tokens * 100)
+      const type = rate >= 50 ? 'success' : rate > 0 ? 'warning' : 'default'
+      return h(NTag, { size: 'small', type }, () => `${rate}%`)
+    },
+  },
+  { title: '输出', key: 'completion_tokens', width: 100 },
   {
     title: '用时/首字',
     key: 'ttft_ms',
-    width: 100,
-    render: (row: RequestLog) => row.ttft_ms != null ? `${row.ttft_ms}ms` : '-',
-  },
-  {
-    title: '延迟(ms)',
-    key: 'duration_ms',
-    width: 90,
-    render: (row: RequestLog) => row.duration_ms != null ? `${row.duration_ms}ms` : '-',
+    width: 130,
+    render: (row: RequestLog) =>
+      h(NSpace, { size: 4 }, () => [
+        h(NTag, { size: 'small' }, () => row.duration_ms != null ? `${(row.duration_ms / 1000).toFixed(1)}s` : '-'),
+        h(NTag, { size: 'small', type: 'info' }, () => row.ttft_ms != null ? `${(row.ttft_ms / 1000).toFixed(1)}s` : '-'),
+      ]),
   },
   {
     title: '流式',
@@ -178,3 +195,10 @@ onMounted(() => {
   fetchLogs()
 })
 </script>
+
+<style scoped>
+:deep(.n-data-table-th__title),
+:deep(.n-data-table-td) {
+  white-space: nowrap;
+}
+</style>

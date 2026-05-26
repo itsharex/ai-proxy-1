@@ -9,11 +9,29 @@ use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
 use crate::server::api::{ok, err_json, ApiError, ApiResponse};
 
+fn build_model_config(body: &LaunchRequest) -> Option<String> {
+    if body.model_haiku.is_none() && body.model_sonnet.is_none() && body.model_opus.is_none() {
+        return None;
+    }
+    let mut map = serde_json::Map::new();
+    if let Some(ref v) = body.model_haiku { map.insert("haiku".into(), serde_json::Value::String(v.clone())); }
+    if let Some(ref v) = body.model_sonnet { map.insert("sonnet".into(), serde_json::Value::String(v.clone())); }
+    if let Some(ref v) = body.model_opus { map.insert("opus".into(), serde_json::Value::String(v.clone())); }
+    Some(serde_json::Value::Object(map).to_string())
+}
+
+fn parse_model_config(json: Option<&str>) -> (Option<String>, Option<String>, Option<String>) {
+    json
+        .and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok())
+        .map(|m| (m.get("haiku").cloned(), m.get("sonnet").cloned(), m.get("opus").cloned()))
+        .unwrap_or((None, None, None))
+}
+
 pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
     let pool = get_pool().await;
 
     let rows: Vec<DbAppConfig> = sqlx::query_as(
-        "SELECT app_type, model, proxy_url, launched_at, config_path, install_path, status FROM app_configs",
+        "SELECT app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config FROM app_configs",
     )
     .fetch_all(pool)
     .await
@@ -39,6 +57,9 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
 
         let installed = install_path.is_some();
         let config_path_str = config::config_path_for(&app_type).to_string_lossy().to_string();
+        let (model_haiku, model_sonnet, model_opus) = parse_model_config(
+            db_rec.as_ref().and_then(|r| r.model_config.as_deref())
+        );
 
         let app_config = AppConfig {
             app_type,
@@ -73,9 +94,9 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
                     Some(r.status.clone())
                 }
             }).unwrap_or(None),
-            model_haiku: None,
-            model_sonnet: None,
-            model_opus: None,
+            model_haiku,
+            model_sonnet,
+            model_opus,
             work_dir: db_rec.as_ref().and_then(|r| {
                 if r.work_dir.as_ref().map_or(true, |s| s.is_empty()) {
                     None
@@ -101,7 +122,7 @@ pub async fn launch_app(
 
     // Resolve install path: custom from DB -> auto-detect -> error
     let db_rec: Option<DbAppConfig> = sqlx::query_as(
-        "SELECT app_type, model, proxy_url, launched_at, config_path, install_path, status FROM app_configs WHERE app_type = ?",
+        "SELECT app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config FROM app_configs WHERE app_type = ?",
     )
     .bind(&body.app_type)
     .fetch_optional(pool)
@@ -137,12 +158,13 @@ pub async fn launch_app(
     let model_haiku = body.model_haiku.as_deref();
     let model_sonnet = body.model_sonnet.as_deref();
     let model_opus = body.model_opus.as_deref();
+    let model_config_json = build_model_config(&body);
 
-    // Resolve an API key for Claude Desktop gateway config
+    // Resolve an API key: Claude uses upstream anthropic key; Codex uses proxy auth key
     let api_key = if app_type.is_claude() {
         resolve_api_key_for_claude(&app_type).await.unwrap_or_default()
     } else {
-        String::new()
+        resolve_proxy_auth_key().await.unwrap_or_default()
     };
 
     if let Err(e) = config::write_config(
@@ -158,7 +180,7 @@ pub async fn launch_app(
     {
         // Save error status to DB
         let _ = sqlx::query(
-            "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&body.app_type)
         .bind(&body.model)
@@ -167,6 +189,8 @@ pub async fn launch_app(
         .bind(Option::<String>::None)
         .bind(&install_path)
         .bind("config_error")
+        .bind(&body.work_dir)
+        .bind(&model_config_json)
         .execute(pool)
         .await;
 
@@ -180,7 +204,7 @@ pub async fn launch_app(
     if let Err(e) = launcher::launch(&app_type, &install_path, work_dir).await {
         // Save error status to DB
         let _ = sqlx::query(
-            "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&body.app_type)
         .bind(&body.model)
@@ -189,6 +213,8 @@ pub async fn launch_app(
         .bind(&config_path)
         .bind(&install_path)
         .bind("launch_error")
+        .bind(&body.work_dir)
+        .bind(&model_config_json)
         .execute(pool)
         .await;
 
@@ -197,7 +223,7 @@ pub async fn launch_app(
 
     // Success — save to DB
     sqlx::query(
-        "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&body.app_type)
     .bind(&body.model)
@@ -206,9 +232,15 @@ pub async fn launch_app(
     .bind(&config_path)
     .bind(&install_path)
     .bind("success")
+    .bind(&body.work_dir)
+    .bind(&model_config_json)
     .execute(pool)
     .await
     .map_err(|e| err_json(e.to_string()))?;
+
+    if app_type.is_codex() {
+        sync_codex_route_rule(&body.model).await;
+    }
 
     let app_config = AppConfig {
         app_type,
@@ -288,4 +320,47 @@ async fn resolve_api_key_for_claude(app_type: &AppType) -> Result<String, String
 
     decrypt_api_key(&selected_key.encrypted_key, &nonce_array)
         .map_err(|e| format!("Failed to decrypt API key: {}", e))
+}
+
+async fn sync_codex_route_rule(model: &str) {
+    let pool = get_pool().await;
+
+    if model.is_empty() {
+        let _ = sqlx::query("DELETE FROM interceptor_rules WHERE id = 'auto_codex_model_route'")
+            .execute(pool)
+            .await;
+        return;
+    }
+
+    let condition_json = r#"{"type":"model_matches","pattern":"gpt*"}"#;
+    let action_json = format!(r#"{{"type":"replace_model","model":"{}"}}"#, model);
+
+    let _ = sqlx::query(
+        "INSERT OR REPLACE INTO interceptor_rules (id, name, phase, rule_type, condition_json, action_json, priority, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("auto_codex_model_route")
+    .bind("Codex 模型自动路由")
+    .bind("pre")
+    .bind("model_route")
+    .bind(condition_json)
+    .bind(&action_json)
+    .bind(100i64)
+    .bind(1i64)
+    .execute(pool)
+    .await;
+
+    tracing::info!("Synced codex auto-route rule: gpt* -> {}", model);
+}
+
+async fn resolve_proxy_auth_key() -> Result<String, String> {
+    let pool = get_pool().await;
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT value FROM settings WHERE key = 'proxy_auth_key'",
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to query proxy_auth_key: {}", e))?;
+
+    row.and_then(|(v,)| if v.is_empty() { None } else { Some(v) })
+        .ok_or_else(|| "proxy_auth_key not configured".to_string())
 }

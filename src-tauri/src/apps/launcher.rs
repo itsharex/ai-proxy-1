@@ -114,16 +114,37 @@ pub async fn launch(
 #[cfg(target_os = "macos")]
 async fn launch_cli(install_path: &str, work_dir: Option<&str>) -> Result<(), String> {
     let dir = work_dir.unwrap_or("$HOME");
-    let script = format!(
-        "tell application \"Terminal\"\n\tactivate\ndo script \"cd '{}' && {}\"\nend tell",
-        dir.replace('\'', "'\\''"),
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_path = format!("/tmp/ai-proxy-launch-{ts}.sh");
+
+    let cd_cmd = if dir == "$HOME" {
+        "cd \"$HOME\"".to_string()
+    } else {
+        format!("cd '{}'", dir.replace('\'', "'\\''"))
+    };
+    let content = format!(
+        "#!/bin/bash\nrm -f \"$0\"\n{cd_cmd} && exec '{}'\n",
         install_path.replace('\'', "'\\''")
     );
-    Command::new("osascript")
-        .arg("-e")
-        .arg(&script)
+
+    tokio::fs::write(&tmp_path, &content)
+        .await
+        .map_err(|e| format!("Failed to create launch script: {e}"))?;
+
+    Command::new("chmod")
+        .args(["+x", &tmp_path])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to set permissions: {e}"))?;
+
+    Command::new("open")
+        .args(["-a", "Terminal", &tmp_path])
         .spawn()
-        .map_err(|e| format!("Failed to open terminal: {}", e))?;
+        .map_err(|e| format!("Failed to open terminal: {e}"))?;
+
     Ok(())
 }
 

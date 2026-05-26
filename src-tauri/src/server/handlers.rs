@@ -1,4 +1,12 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+
+/// Cache: response_id → accumulated reasoning_content.
+/// Stores reasoning from DeepSeek so it can be injected into subsequent requests
+/// when Codex doesn't preserve `<thinking>` tags in multi-turn conversations.
+static REASONING_CACHE: std::sync::LazyLock<Mutex<HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 use axum::extract::{Request, Path};
 use axum::response::{IntoResponse, Response};
@@ -12,7 +20,7 @@ use crate::converter::generators::anthropic::AnthropicGenerator;
 use crate::converter::generators::completions::CompletionsGenerator;
 use crate::converter::generators::gemini::GeminiGenerator;
 use crate::converter::generators::responses::ResponsesGenerator;
-use crate::converter::ir::ClientFormat;
+use crate::converter::ir::{ClientFormat, IrContentPart, IrRole};
 use crate::converter::parsers::anthropic::AnthropicParser;
 use crate::converter::parsers::completions::CompletionsParser;
 use crate::converter::parsers::gemini::GeminiParser;
@@ -75,12 +83,30 @@ async fn handle_proxy(
     let body_value: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
         Err(e) => {
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, "proxy", &client_format,
+                "unknown", false, 400, start.elapsed().as_millis() as i64,
+                Some(&format!("invalid JSON: {}", e)), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return ProxyError::Parse(format!("invalid JSON: {}", e)).into_response();
         }
     };
 
     let parser = get_parser(&client_format);
     let generator = get_generator(&client_format);
+
+    // Debug: log raw messages when tool-related content is present
+    if let Some(msgs) = body_value["messages"].as_array() {
+        let has_tool = msgs.iter().any(|m| {
+            let role = m["role"].as_str().unwrap_or("");
+            role == "tool" || role == "function" || m.get("tool_calls").is_some() || m.get("function_call").is_some()
+        });
+        if has_tool {
+            tracing::warn!("RAW REQUEST messages: {}", serde_json::to_string(&body_value["messages"]).unwrap_or_default());
+        }
+    }
 
     let mut ir_request = match parser.parse_request(&body_value) {
         Ok(r) => {
@@ -89,6 +115,14 @@ async fn handle_proxy(
         }
         Err(e) => {
             error!("Parse request error: {}", e);
+            let model_hint = body_value["model"].as_str().unwrap_or("unknown");
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, "proxy", &client_format,
+                model_hint, false, 400, start.elapsed().as_millis() as i64,
+                Some(&format!("parse error: {}", e)), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return e.into_response();
         }
     };
@@ -116,6 +150,13 @@ async fn handle_proxy(
         }
         Err(e) => {
             error!("Route not found for model '{}': {}", ir_request.model, e);
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, "proxy", &client_format,
+                &ir_request.model, ir_request.stream, 404, start.elapsed().as_millis() as i64,
+                Some(&format!("route not found: {}", e)), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return e.into_response();
         }
     };
@@ -123,6 +164,14 @@ async fn handle_proxy(
     let selected_key = match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
         Ok(k) => k,
         Err(e) => {
+            let err_msg = format!("key rotation error: {}", e);
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, &route.provider_name, &route.target_format,
+                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                Some(&err_msg), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return e.into_response();
         }
     };
@@ -132,12 +181,27 @@ async fn handle_proxy(
     if nonce_slice.len() == 12 {
         nonce_array.copy_from_slice(&nonce_slice);
     } else {
+        if let Err(le) = log_request_entry(
+            &request_id, &client_format, &route.provider_name, &route.target_format,
+            &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+            Some("invalid nonce length"), 0, 0, 0, None,
+        ).await {
+            tracing::error!("Early error logging failed: {}", le);
+        }
         return ProxyError::KeyManagement("invalid nonce length".into()).into_response();
     }
 
     let api_key = match decrypt_api_key(&selected_key.encrypted_key, &nonce_array) {
         Ok(k) => k,
         Err(e) => {
+            let err_msg = format!("key decryption error: {}", e);
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, &route.provider_name, &route.target_format,
+                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                Some(&err_msg), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return e.into_response();
         }
     };
@@ -149,6 +213,21 @@ async fn handle_proxy(
 
     let mut ir_request_for_upstream = ir_request.clone();
 
+    // Inject cached reasoning_content into assistant messages that lack it.
+    // DeepSeek requires reasoning_content on assistant messages in thinking mode.
+    // Codex may strip <thinking> tags, so we rely on a proxy-side cache.
+    {
+        let cache = REASONING_CACHE.lock().unwrap();
+        inject_cached_reasoning_into_assistant_messages(
+            &mut ir_request_for_upstream.messages,
+            ir_request_for_upstream
+                .extra
+                .get("previous_response_id")
+                .and_then(|v| v.as_str()),
+            &cache,
+        );
+    }
+
     if client_format == ClientFormat::Gemini && ir_request.stream {
         ir_request_for_upstream.stream = true;
     }
@@ -156,9 +235,24 @@ async fn handle_proxy(
     let target_body = match target_generator.generate_request(&ir_request_for_upstream) {
         Ok(b) => b,
         Err(e) => {
+            let err_msg = format!("request generation error: {}", e);
+            if let Err(le) = log_request_entry(
+                &request_id, &client_format, &route.provider_name, &route.target_format,
+                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                Some(&err_msg), 0, 0, 0, None,
+            ).await {
+                tracing::error!("Early error logging failed: {}", le);
+            }
             return e.into_response();
         }
     };
+
+    if ir_request_for_upstream.messages.iter().any(|m| m.role == IrRole::Tool) {
+        tracing::warn!("TOOL DEBUG messages for model={}: {}",
+            ir_request_for_upstream.model,
+            serde_json::to_string(&target_body["messages"]).unwrap_or_default()
+        );
+    }
 
     let mut url = format!("{}{}", route.base_url.trim_end_matches('/'), route.endpoint_path);
 
@@ -195,13 +289,14 @@ async fn handle_proxy(
         Ok(r) => r,
         Err(e) => {
             let err = ProxyError::Network(format!("request to provider failed: {}", e));
-            let _ = log_request_entry(
+            if let Err(le) = log_request_entry(
                 &request_id,
                 &client_format,
                 &route.provider_name,
                 &route.target_format,
                 &ir_request.model,
                 ir_request.stream,
+                502,
                 start.elapsed().as_millis() as i64,
                 Some(err.to_string().as_str()),
                 0,
@@ -209,7 +304,10 @@ async fn handle_proxy(
                 0,
                 None,
             )
-            .await;
+            .await
+            {
+                tracing::error!("Network error logging failed: {}", le);
+            }
             return err.into_response();
         }
     };
@@ -227,6 +325,28 @@ async fn handle_proxy(
         };
         let body_text = String::from_utf8_lossy(&resp_body).into_owned();
         error!("Upstream error {}: {}", status_code, body_text);
+
+        let err_msg: String = body_text.chars().take(500).collect();
+        if let Err(le) = log_request_entry(
+            &request_id,
+            &client_format,
+            &route.provider_name,
+            &route.target_format,
+            &ir_request.model,
+            ir_request.stream,
+            status_code,
+            start.elapsed().as_millis() as i64,
+            Some(&err_msg),
+            0,
+            0,
+            0,
+            None,
+        )
+        .await
+        {
+            tracing::error!("Upstream error logging failed: {}", le);
+        }
+
         let mut response = body_text.into_response();
         *response.status_mut() = status;
         return response;
@@ -266,13 +386,30 @@ async fn handle_proxy(
         let completion_tokens = ir_response.usage.completion_tokens as i64;
         let cached_tokens = ir_response.usage.cached_tokens as i64;
 
-        let _ = log_request_entry(
+        // Cache reasoning_content for multi-turn (non-streaming path)
+        if let Some(ref resp_id) = ir_response.id {
+            let reasoning: String = ir_response.message.content.iter()
+                .filter_map(|p| match p {
+                    IrContentPart::Thinking { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            if !reasoning.is_empty() {
+                if let Ok(mut cache) = REASONING_CACHE.lock() {
+                    cache.insert(resp_id.clone(), reasoning);
+                }
+            }
+        }
+
+        if let Err(e) = log_request_entry(
             &request_id,
             &client_format,
             &route.provider_name,
             &route.target_format,
             &ir_request.model,
             false,
+            200,
             start.elapsed().as_millis() as i64,
             None,
             prompt_tokens,
@@ -280,15 +417,23 @@ async fn handle_proxy(
             cached_tokens,
             Some(start.elapsed().as_millis() as i64),
         )
-        .await;
+        .await
+        {
+            tracing::error!("Non-stream logging failed: {}", e);
+        }
 
-        let _ = UsageTracker::record(
-            &target_model,
-            &route.provider_name,
-            prompt_tokens,
-            completion_tokens,
-        )
-        .await;
+        if prompt_tokens > 0 || completion_tokens > 0 {
+            if let Err(e) = UsageTracker::record(
+                &target_model,
+                &route.provider_name,
+                prompt_tokens,
+                completion_tokens,
+            )
+            .await
+            {
+                tracing::error!("Non-stream usage tracking failed: {}", e);
+            }
+        }
 
         let mut response = axum::Json(client_response).into_response();
         *response.status_mut() = status;
@@ -303,7 +448,25 @@ async fn handle_proxy(
         let model_name = ir_request.model.clone();
         let client_format_clone = client_format.clone();
 
+        let stream_state = Arc::new(StreamLogState {
+            request_id: request_id.clone(),
+            client_format: client_format.clone(),
+            provider_name: route.provider_name.clone(),
+            provider_format: route.target_format.clone(),
+            model: ir_request.model.clone(),
+            target_model: target_model.clone(),
+            start: start.clone(),
+            prompt_tokens: AtomicU32::new(0),
+            completion_tokens: AtomicU32::new(0),
+            cached_tokens: AtomicU32::new(0),
+            ttft_ms: Mutex::new(None),
+            logged: AtomicBool::new(false),
+        });
+        let stream_state_ref = stream_state.clone();
+
         let sse_stream = async_stream::stream! {
+            let _guard = StreamLoggingGuard { state: stream_state };
+
             let mut total_prompt = 0u32;
             let mut total_completion = 0u32;
             let mut total_cached = 0u32;
@@ -329,6 +492,8 @@ async fn handle_proxy(
             let mut resp_func_name = String::new();
             let mut resp_accumulated_args = String::new();
             let mut resp_accumulated_text = String::new();
+            let mut resp_thinking_started = false;
+            let mut resp_accumulated_reasoning = String::new(); // pure reasoning without tags, for cache
             let is_responses = matches!(client_format, ClientFormat::Responses);
 
             while let Some(chunk_result) = reader.next().await {
@@ -364,10 +529,14 @@ async fn handle_proxy(
                         total_prompt += usage.prompt_tokens;
                         total_completion += usage.completion_tokens;
                         total_cached += usage.cached_tokens;
+                        stream_state_ref.prompt_tokens.store(total_prompt, Ordering::SeqCst);
+                        stream_state_ref.completion_tokens.store(total_completion, Ordering::SeqCst);
+                        stream_state_ref.cached_tokens.store(total_cached, Ordering::SeqCst);
                     }
 
-                    if ttft_ms.is_none() && (ir_chunk.delta_content.is_some() || ir_chunk.delta_tool_calls.is_some()) {
+                    if ttft_ms.is_none() && (ir_chunk.delta_content.is_some() || ir_chunk.delta_tool_calls.is_some() || ir_chunk.delta_thinking.is_some()) {
                         ttft_ms = Some(start.elapsed().as_millis() as i64);
+                        *stream_state_ref.ttft_ms.lock().unwrap() = ttft_ms;
                     }
 
                     // Emit stream start on first real content
@@ -552,6 +721,24 @@ async fn handle_proxy(
                                         ));
                                         started = true;
                                     }
+                                    // Close thinking/text/message before starting a tool call.
+                                    if let Some(close_tag) = close_responses_thinking_if_needed(
+                                        &mut resp_thinking_started,
+                                        &mut resp_accumulated_text,
+                                        true,
+                                    ) {
+                                        let close_event = serde_json::json!({
+                                            "type": "response.output_text.delta",
+                                            "output_index": resp_output_index - 1,
+                                            "content_index": 0,
+                                            "delta": close_tag,
+                                            "response_id": response_id,
+                                        });
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                            format!("data: {}\n\n", close_event)
+                                        ));
+                                    }
+
                                     // Close text part + message if open
                                     if resp_text_part_open {
                                         yield Ok::<_, std::convert::Infallible>(Bytes::from(
@@ -649,9 +836,96 @@ async fn handle_proxy(
                             }
                         }
 
+                        // Thinking / reasoning_content — output as plain text deltas
+                        // so Codex preserves it and sends it back in multi-turn
+                        if let Some(thinking) = &ir_chunk.delta_thinking {
+                            if !thinking.is_empty() && !resp_func_open {
+                                if !resp_message_open {
+                                    // Emit response.created if not started
+                                    if !started {
+                                        let created = serde_json::json!({
+                                            "type": "response.created",
+                                            "response": {
+                                                "id": response_id,
+                                                "object": "response",
+                                                "status": "in_progress",
+                                                "model": model_name,
+                                                "output": [],
+                                            }
+                                        });
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                            format!("data: {}\n\n", created)
+                                        ));
+                                    }
+                                    let item_added = serde_json::json!({
+                                        "type": "response.output_item.added",
+                                        "output_index": resp_output_index,
+                                        "item": {
+                                            "type": "message",
+                                            "id": "msg_proxy",
+                                            "role": "assistant",
+                                            "content": [],
+                                            "status": "in_progress",
+                                        }
+                                    });
+                                    let part_added = serde_json::json!({
+                                        "type": "response.content_part.added",
+                                        "output_index": resp_output_index,
+                                        "content_index": 0,
+                                        "part": {"type": "output_text", "text": ""},
+                                    });
+                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                        format!("data: {}\n\ndata: {}\n\n", item_added, part_added)
+                                    ));
+                                    resp_message_open = true;
+                                    resp_text_part_open = true;
+                                    resp_output_index += 1;
+                                    started = true;
+                                }
+                                // First thinking chunk: output opening tag
+                                let mut output_text = String::new();
+                                if !resp_thinking_started {
+                                    output_text.push_str("<thinking>");
+                                    resp_thinking_started = true;
+                                }
+                                output_text.push_str(thinking);
+                                resp_accumulated_text.push_str(&output_text);
+                                resp_accumulated_reasoning.push_str(thinking);
+                                let delta_event = serde_json::json!({
+                                    "type": "response.output_text.delta",
+                                    "output_index": resp_output_index - 1,
+                                    "content_index": 0,
+                                    "delta": output_text,
+                                    "response_id": response_id,
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", delta_event)
+                                ));
+                            }
+                            continue;
+                        }
+
                         // Text content
                         if let Some(content) = &ir_chunk.delta_content {
                             if !content.is_empty() && !resp_func_open {
+                                // Close thinking tag if we were in thinking mode
+                                if let Some(close_tag) = close_responses_thinking_if_needed(
+                                    &mut resp_thinking_started,
+                                    &mut resp_accumulated_text,
+                                    true,
+                                ) {
+                                    let close_event = serde_json::json!({
+                                        "type": "response.output_text.delta",
+                                        "output_index": resp_output_index - 1,
+                                        "content_index": 0,
+                                        "delta": close_tag,
+                                        "response_id": response_id,
+                                    });
+                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                        format!("data: {}\n\n", close_event)
+                                    ));
+                                }
+
                                 if !resp_message_open {
                                     // Emit response.created if not started
                                     if !started {
@@ -711,6 +985,24 @@ async fn handle_proxy(
 
                         // Finish
                         if ir_chunk.finish_reason.is_some() {
+                            // Close thinking tag if still open
+                            if let Some(close_tag) = close_responses_thinking_if_needed(
+                                &mut resp_thinking_started,
+                                &mut resp_accumulated_text,
+                                false,
+                            ) {
+                                let close_event = serde_json::json!({
+                                    "type": "response.output_text.delta",
+                                    "output_index": resp_output_index - 1,
+                                    "content_index": 0,
+                                    "delta": close_tag,
+                                    "response_id": response_id,
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", close_event)
+                                ));
+                            }
+
                             // Close func_call if open
                             if resp_func_open {
                                 yield Ok::<_, std::convert::Infallible>(Bytes::from(
@@ -781,6 +1073,19 @@ async fn handle_proxy(
                             yield Ok::<_, std::convert::Infallible>(Bytes::from(
                                 format!("data: {}\n\n", completed)
                             ));
+
+                            // Store accumulated reasoning in cache for multi-turn
+                            if !resp_accumulated_reasoning.is_empty() {
+                                if let Ok(mut cache) = REASONING_CACHE.lock() {
+                                    cache.insert(response_id.to_string(), resp_accumulated_reasoning.clone());
+                                    // Evict old entries (keep last 50)
+                                    if cache.len() > 50 {
+                                        let keys: Vec<String> = cache.keys().take(cache.len() - 50).cloned().collect();
+                                        for k in keys { cache.remove(&k); }
+                                    }
+                                }
+                            }
+
                             finished = true;
                             continue;
                         }
@@ -847,13 +1152,16 @@ async fn handle_proxy(
             let ct = total_completion as i64;
             let cache_t = total_cached as i64;
 
-            let _ = log_request_entry(
+            stream_state_ref.logged.store(true, Ordering::SeqCst);
+
+            if let Err(e) = log_request_entry(
                 &request_id,
                 &client_format_clone,
                 &route.provider_name,
                 &route.target_format,
                 &target_model,
                 true,
+                200,
                 elapsed,
                 None,
                 pt,
@@ -861,15 +1169,23 @@ async fn handle_proxy(
                 cache_t,
                 ttft_ms,
             )
-            .await;
+            .await
+            {
+                tracing::error!("Stream logging failed: {}", e);
+            }
 
-            let _ = UsageTracker::record(
-                &target_model,
-                &route.provider_name,
-                pt,
-                ct,
-            )
-            .await;
+            if pt > 0 || ct > 0 {
+                if let Err(e) = UsageTracker::record(
+                    &target_model,
+                    &route.provider_name,
+                    pt,
+                    ct,
+                )
+                .await
+                {
+                    tracing::error!("Stream usage tracking failed: {}", e);
+                }
+            }
         };
 
         let body_stream = axum::body::Body::from_stream(sse_stream);
@@ -1062,6 +1378,7 @@ async fn log_request_entry(
     provider_format: &ClientFormat,
     model: &str,
     stream: bool,
+    status_code: u16,
     duration_ms: i64,
     error_message: Option<&str>,
     prompt_tokens: i64,
@@ -1076,6 +1393,7 @@ async fn log_request_entry(
         &format!("{:?}", provider_format).to_lowercase(),
         model,
         stream,
+        status_code,
         duration_ms,
         error_message,
         prompt_tokens,
@@ -1084,4 +1402,216 @@ async fn log_request_entry(
         ttft_ms,
     )
     .await
+}
+
+struct StreamLogState {
+    request_id: String,
+    client_format: ClientFormat,
+    provider_name: String,
+    provider_format: ClientFormat,
+    model: String,
+    target_model: String,
+    start: std::time::Instant,
+    prompt_tokens: AtomicU32,
+    completion_tokens: AtomicU32,
+    cached_tokens: AtomicU32,
+    ttft_ms: Mutex<Option<i64>>,
+    logged: AtomicBool,
+}
+
+struct StreamLoggingGuard {
+    state: Arc<StreamLogState>,
+}
+
+impl Drop for StreamLoggingGuard {
+    fn drop(&mut self) {
+        if self.state.logged.load(Ordering::SeqCst) {
+            return;
+        }
+
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            let pt = state.prompt_tokens.load(Ordering::SeqCst) as i64;
+            let ct = state.completion_tokens.load(Ordering::SeqCst) as i64;
+            let cache_t = state.cached_tokens.load(Ordering::SeqCst) as i64;
+            let elapsed = state.start.elapsed().as_millis() as i64;
+            let ttft = *state.ttft_ms.lock().unwrap();
+
+            if let Err(e) = log_request_entry(
+                &state.request_id,
+                &state.client_format,
+                &state.provider_name,
+                &state.provider_format,
+                &state.model,
+                true,
+                200,
+                elapsed,
+                None,
+                pt,
+                ct,
+                cache_t,
+                ttft,
+            )
+            .await
+            {
+                tracing::error!("Stream guard logging failed: {}", e);
+            }
+            if pt > 0 || ct > 0 {
+                if let Err(e) =
+                    UsageTracker::record(&state.target_model, &state.provider_name, pt, ct).await
+                {
+                    tracing::error!("Stream guard usage tracking failed: {}", e);
+                }
+            }
+        });
+    }
+}
+
+/// Split `<thinking>...</thinking>` from text.
+/// Returns (thinking_content, remaining_text).
+fn close_responses_thinking_if_needed(
+    thinking_started: &mut bool,
+    accumulated_text: &mut String,
+    append_newline: bool,
+) -> Option<String> {
+    if !*thinking_started {
+        return None;
+    }
+
+    let close_tag = if append_newline {
+        "</thinking>\n"
+    } else {
+        "</thinking>"
+    };
+    accumulated_text.push_str(close_tag);
+    *thinking_started = false;
+    Some(close_tag.to_string())
+}
+
+fn inject_cached_reasoning_into_assistant_messages(
+    messages: &mut [crate::converter::ir::IrMessage],
+    previous_response_id: Option<&str>,
+    cache: &HashMap<String, String>,
+) {
+    let cached_by_id = previous_response_id.and_then(|id| cache.get(id).cloned());
+    let fallback_reasoning = cache.values().next().cloned();
+
+    for msg in messages {
+        if msg.role != IrRole::Assistant {
+            continue;
+        }
+
+        let has_thinking = msg
+            .content
+            .iter()
+            .any(|p| matches!(p, IrContentPart::Thinking { .. }));
+        if has_thinking {
+            continue;
+        }
+
+        if let Some(reasoning) = cached_by_id.clone() {
+            msg.content
+                .insert(0, IrContentPart::Thinking { text: reasoning });
+            continue;
+        }
+
+        let text_content: String = msg
+            .content
+            .iter()
+            .filter_map(|p| match p {
+                IrContentPart::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+
+        let (thinking_opt, remaining) = split_thinking_tags(&text_content);
+        if let Some(thinking) = thinking_opt {
+            msg.content.clear();
+            msg.content.push(IrContentPart::Thinking { text: thinking });
+            let trimmed = remaining.trim();
+            if !trimmed.is_empty() {
+                msg.content.push(IrContentPart::Text {
+                    text: trimmed.to_string(),
+                });
+            }
+            continue;
+        }
+
+        if let Some(reasoning) = fallback_reasoning.clone() {
+            msg.content
+                .insert(0, IrContentPart::Thinking { text: reasoning });
+        }
+    }
+}
+
+fn split_thinking_tags(text: &str) -> (Option<String>, String) {
+    let tag_start = "<thinking>";
+    let tag_end = "</thinking>";
+    let mut thinking = String::new();
+    let mut remaining = text.to_string();
+    while let Some(start_idx) = remaining.find(tag_start) {
+        let after_start = start_idx + tag_start.len();
+        if let Some(rel_end) = remaining[after_start..].find(tag_end) {
+            thinking.push_str(&remaining[after_start..after_start + rel_end]);
+            let end_abs = after_start + rel_end + tag_end.len();
+            remaining = format!("{}{}", &remaining[..start_idx], &remaining[end_abs..]);
+        } else {
+            break;
+        }
+    }
+    (if thinking.is_empty() { None } else { Some(thinking) }, remaining)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        close_responses_thinking_if_needed, inject_cached_reasoning_into_assistant_messages,
+    };
+    use crate::converter::ir::{IrContentPart, IrMessage, IrRole};
+    use std::collections::HashMap;
+
+    #[test]
+    fn closes_thinking_before_tool_call_boundary() {
+        let mut thinking_started = true;
+        let mut accumulated_text = "<thinking>repo analysis".to_string();
+
+        let close_tag = close_responses_thinking_if_needed(
+            &mut thinking_started,
+            &mut accumulated_text,
+            true,
+        );
+
+        assert_eq!(close_tag.as_deref(), Some("</thinking>\n"));
+        assert!(!thinking_started);
+        assert_eq!(accumulated_text, "<thinking>repo analysis</thinking>\n");
+    }
+
+    #[test]
+    fn injects_cached_reasoning_when_previous_response_id_missing() {
+        let mut messages = vec![IrMessage {
+            role: IrRole::Assistant,
+            content: vec![IrContentPart::Text {
+                text: "最终答案".to_string(),
+            }],
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }];
+        let mut cache = HashMap::new();
+        cache.insert("resp_1".to_string(), "已缓存推理".to_string());
+
+        inject_cached_reasoning_into_assistant_messages(&mut messages, None, &cache);
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content.len(), 2);
+        match &messages[0].content[0] {
+            IrContentPart::Thinking { text } => assert_eq!(text, "已缓存推理"),
+            other => panic!("expected thinking content, got {:?}", other),
+        }
+        match &messages[0].content[1] {
+            IrContentPart::Text { text } => assert_eq!(text, "最终答案"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+    }
 }

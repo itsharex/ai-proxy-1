@@ -38,11 +38,10 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed, h } from 'vue'
-import { NTag, NButton, useMessage } from 'naive-ui'
+import { NTag, NButton } from 'naive-ui'
 import { api } from '../api'
 import type { Provider } from '../types'
 
-const message = useMessage()
 const providers = ref<Provider[]>([])
 
 interface FlatModel {

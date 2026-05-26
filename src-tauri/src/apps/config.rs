@@ -9,6 +9,11 @@ pub fn codex_config_path() -> PathBuf {
     home.join(".codex").join("config.toml")
 }
 
+pub fn codex_auth_path() -> PathBuf {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+    home.join(".codex").join("auth.json")
+}
+
 pub fn claude_cli_config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
     home.join(".claude").join("settings.json")
@@ -56,7 +61,7 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
     }
 }
 
-pub async fn write_codex_config(model: &str, proxy_base: &str) -> Result<PathBuf, String> {
+pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) -> Result<PathBuf, String> {
     let path = codex_config_path();
     let mut config: HashMap<String, toml::Value> = if path.exists() {
         let content = tokio::fs::read_to_string(&path)
@@ -71,10 +76,27 @@ pub async fn write_codex_config(model: &str, proxy_base: &str) -> Result<PathBuf
         "model".to_string(),
         toml::Value::String(model.to_string()),
     );
-    config.insert(
-        "openai_base_url".to_string(),
-        toml::Value::String(proxy_base.to_string()),
-    );
+
+    let provider_name = config.get("model_provider").and_then(|v| v.as_str()).map(|s| s.to_string());
+    if let Some(ref name) = provider_name {
+        if let Some(toml::Value::Table(providers)) = config.get_mut("model_providers") {
+            if let Some(toml::Value::Table(provider)) = providers.get_mut(name.as_str()) {
+                provider.insert(
+                    "name".to_string(),
+                    toml::Value::String("AI Proxy".to_string()),
+                );
+                provider.insert(
+                    "base_url".to_string(),
+                    toml::Value::String(proxy_base.to_string()),
+                );
+            }
+        }
+    } else {
+        config.insert(
+            "openai_base_url".to_string(),
+            toml::Value::String(proxy_base.to_string()),
+        );
+    }
 
     let content =
         toml::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {}", e))?;
@@ -87,7 +109,45 @@ pub async fn write_codex_config(model: &str, proxy_base: &str) -> Result<PathBuf
 
     atomic_write(&path, &content).await?;
     tracing::info!("Wrote codex config to {:?}", path);
+
+    // Update auth.json with API key
+    write_codex_auth(api_key).await?;
+
     Ok(path)
+}
+
+async fn write_codex_auth(api_key: &str) -> Result<(), String> {
+    let path = codex_auth_path();
+    let mut auth: serde_json::Value = if path.exists() {
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("Failed to read auth.json: {}", e))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if api_key.is_empty() {
+        return Ok(());
+    }
+
+    auth.as_object_mut().unwrap().insert(
+        "OPENAI_API_KEY".to_string(),
+        serde_json::Value::String(api_key.to_string()),
+    );
+
+    let content = serde_json::to_string_pretty(&auth)
+        .map_err(|e| format!("Failed to serialize auth.json: {}", e))?;
+
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create auth directory: {}", e))?;
+    }
+
+    atomic_write(&path, &content).await?;
+    tracing::info!("Wrote codex auth to {:?}", path);
+    Ok(())
 }
 
 pub async fn write_claude_cli_config(
@@ -261,7 +321,7 @@ pub async fn write_config(
 ) -> Result<PathBuf, String> {
     match app_type {
         AppType::CodexCli | AppType::CodexDesktop => {
-            write_codex_config(model, proxy_base).await
+            write_codex_config(model, proxy_base, api_key).await
         }
         AppType::ClaudeCli => {
             write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base).await

@@ -9,6 +9,12 @@ pub struct CompletionsGenerator;
 
 impl FormatGenerator for CompletionsGenerator {
     fn generate_request(&self, ir: &IrRequest) -> Result<Value, ProxyError> {
+        // Collect all tool_call_ids from tool messages to verify completeness
+        let responded_ids: std::collections::HashSet<String> = ir.messages.iter()
+            .filter(|m| m.role == IrRole::Tool)
+            .filter_map(|m| m.tool_call_id.clone())
+            .collect();
+
         let mut messages = Vec::new();
 
         for msg in &ir.messages {
@@ -23,29 +29,55 @@ impl FormatGenerator for CompletionsGenerator {
             });
 
             if let Some(name) = &msg.name {
-                message["name"] = json!(name);
+                if msg.role != IrRole::Tool {
+                    message["name"] = json!(name);
+                }
             }
 
             if let Some(tool_call_id) = &msg.tool_call_id {
                 message["tool_call_id"] = json!(tool_call_id);
             }
 
-            if msg.content.len() == 1 {
-                if let Some(IrContentPart::Text { text }) = msg.content.first() {
+            // For assistant messages, separate Thinking content for reasoning_content
+            let content_parts: Vec<IrContentPart> = if msg.role == IrRole::Assistant {
+                let thinking_text: String = msg.content.iter()
+                    .filter_map(|p| match p {
+                        IrContentPart::Thinking { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+
+                if !thinking_text.is_empty() {
+                    message["reasoning_content"] = json!(thinking_text);
+                }
+
+                msg.content.iter()
+                    .filter(|p| !matches!(p, IrContentPart::Thinking { .. }))
+                    .cloned()
+                    .collect()
+            } else {
+                msg.content.clone()
+            };
+
+            if content_parts.len() == 1 {
+                if let Some(IrContentPart::Text { text }) = content_parts.first() {
                     message["content"] = json!(text);
                 } else {
-                    message["content"] = json!(serialize_content_parts(&msg.content));
+                    message["content"] = json!(serialize_content_parts(&content_parts));
                 }
-            } else if msg.content.is_empty() {
+            } else if content_parts.is_empty() {
                 message["content"] = json!(null);
             } else {
-                message["content"] = json!(serialize_content_parts(&msg.content));
+                message["content"] = json!(serialize_content_parts(&content_parts));
             }
 
             if let Some(tool_calls) = &msg.tool_calls {
+                // Only include tool_calls that have matching tool responses
                 let calls: Vec<Value> = tool_calls
                     .iter()
                     .enumerate()
+                    .filter(|(_, tc)| responded_ids.contains(&tc.id))
                     .map(|(i, tc)| {
                         json!({
                             "index": i,
@@ -58,7 +90,9 @@ impl FormatGenerator for CompletionsGenerator {
                         })
                     })
                     .collect();
-                message["tool_calls"] = json!(calls);
+                if !calls.is_empty() {
+                    message["tool_calls"] = json!(calls);
+                }
             }
 
             messages.push(message);
@@ -310,17 +344,12 @@ fn serialize_content_parts(parts: &[IrContentPart]) -> Vec<Value> {
                 }
             }
             IrContentPart::ToolUse { id, name, input } => json!({
-                "type": "function",
-                "id": id,
-                "function": {
-                    "name": name,
-                    "arguments": input.to_string(),
-                },
+                "type": "text",
+                "text": format!("[Tool call: {} ({}) args={}]", name, id, input),
             }),
             IrContentPart::ToolResult { tool_use_id, content, .. } => json!({
-                "type": "function",
-                "tool_call_id": tool_use_id,
-                "content": content,
+                "type": "text",
+                "text": format!("[Tool result for {}: {}]", tool_use_id, content),
             }),
         })
         .collect()

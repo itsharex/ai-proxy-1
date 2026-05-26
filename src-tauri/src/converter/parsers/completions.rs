@@ -16,7 +16,7 @@ impl FormatParser for CompletionsParser {
             .as_array()
             .ok_or_else(|| ProxyError::Parse("missing messages".into()))?;
 
-        let ir_messages: Vec<IrMessage> = messages
+        let mut ir_messages: Vec<IrMessage> = messages
             .iter()
             .map(|m| {
                 let role = match m["role"].as_str().unwrap_or("user") {
@@ -24,7 +24,7 @@ impl FormatParser for CompletionsParser {
                     "developer" => IrRole::Developer,
                     "user" => IrRole::User,
                     "assistant" => IrRole::Assistant,
-                    "tool" => IrRole::Tool,
+                    "tool" | "function" => IrRole::Tool,
                     r => return Err(ProxyError::Parse(format!("unknown role: {}", r))),
                 };
 
@@ -65,17 +65,65 @@ impl FormatParser for CompletionsParser {
                         })
                         .collect();
                     if calls.is_empty() { None } else { Some(calls) }
+                }).or_else(|| {
+                    m.get("function_call").and_then(|fc| {
+                        let name = fc.get("name")?.as_str()?.to_string();
+                        Some(vec![IrToolCall {
+                            id: name.clone(),
+                            name,
+                            arguments: fc.get("arguments")?.as_str()?.to_string(),
+                        }])
+                    })
                 });
+
+                let tool_call_id = m.get("tool_call_id").and_then(|v| v.as_str()).map(String::from)
+                    .or_else(|| {
+                        if m["role"].as_str() == Some("function") {
+                            m.get("name").and_then(|v| v.as_str()).map(String::from)
+                        } else {
+                            None
+                        }
+                    });
 
                 Ok(IrMessage {
                     role,
                     content,
                     name: m.get("name").and_then(|v| v.as_str()).map(String::from),
-                    tool_call_id: m.get("tool_call_id").and_then(|v| v.as_str()).map(String::from),
+                    tool_call_id,
                     tool_calls,
                 })
             })
             .collect::<Result<_, _>>()?;
+
+        // Post-process: fix tool_call_id for function-role-derived tool messages
+        // Codex uses new-style tool_calls (id="call_abc") on assistant but old-style
+        // function role (name="read_file") for responses. Map name → real id.
+        let mut all_ids = std::collections::HashSet::new();
+        let mut name_to_id = std::collections::HashMap::new();
+        for msg in &ir_messages {
+            if msg.role == IrRole::Assistant {
+                if let Some(calls) = &msg.tool_calls {
+                    for tc in calls {
+                        all_ids.insert(tc.id.clone());
+                        name_to_id.insert(tc.name.clone(), tc.id.clone());
+                    }
+                }
+            }
+        }
+        for msg in &mut ir_messages {
+            if msg.role == IrRole::Tool {
+                tracing::warn!("TOOL PARSE: tool_call_id={:?}, name={:?}", msg.tool_call_id, msg.name);
+                if let Some(ref call_id) = msg.tool_call_id {
+                    if !all_ids.contains(call_id) {
+                        tracing::warn!("TOOL PARSE: call_id={} not in all_ids, trying name_to_id", call_id);
+                        if let Some(real_id) = name_to_id.get(call_id).cloned() {
+                            tracing::warn!("TOOL PARSE: remapped {} -> {}", call_id, real_id);
+                            msg.tool_call_id = Some(real_id);
+                        }
+                    }
+                }
+            }
+        }
 
         let tools = body.get("tools").and_then(|t| {
             Some(
@@ -184,7 +232,7 @@ impl FormatParser for CompletionsParser {
                     })
                     .collect()
             }),
-            delta_thinking: None,
+            delta_thinking: delta.and_then(|d| d["reasoning_content"].as_str()).map(String::from),
             finish_reason: choice.and_then(|c| c["finish_reason"].as_str()).map(String::from),
             usage: chunk.get("usage").map(|u| IrUsage {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
@@ -213,7 +261,7 @@ impl FormatParser for CompletionsParser {
             if calls.is_empty() { None } else { Some(calls) }
         });
 
-        let content = if msg["content"].is_string() {
+        let mut content = if msg["content"].is_string() {
             let text = msg["content"].as_str().unwrap_or("").to_string();
             if text.is_empty() { vec![] } else {
                 vec![IrContentPart::Text { text }]
@@ -231,6 +279,12 @@ impl FormatParser for CompletionsParser {
         } else {
             vec![]
         };
+
+        if let Some(reasoning) = msg.get("reasoning_content").and_then(|v| v.as_str()) {
+            if !reasoning.is_empty() {
+                content.insert(0, IrContentPart::Thinking { text: reasoning.to_string() });
+            }
+        }
 
         Ok(IrResponse {
             id: body["id"].as_str().map(String::from),

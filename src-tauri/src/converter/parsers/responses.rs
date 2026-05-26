@@ -52,6 +52,11 @@ impl FormatParser for ResponsesParser {
             }
         }
 
+        // Responses format uses separate `function_call` items for each tool call,
+        // but completions format expects all tool_calls in a single assistant message.
+        // Merge consecutive assistant messages to satisfy this requirement.
+        messages = merge_consecutive_assistant_messages(messages);
+
         let tools = body["tools"].as_array().map(|arr| {
             arr.iter()
                 .filter_map(|t| {
@@ -374,10 +379,8 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
 
             Ok(Some(IrMessage {
                 role: IrRole::Tool,
-                content: vec![IrContentPart::ToolResult {
-                    tool_use_id: call_id.clone(),
-                    content: output,
-                    tool_name: None,
+                content: vec![IrContentPart::Text {
+                    text: output,
                 }],
                 name: None,
                 tool_call_id: Some(call_id),
@@ -431,6 +434,27 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 }
             }
 
+            // For assistant messages, extract <thinking> tags from content
+            if role == IrRole::Assistant && !content_parts.is_empty() {
+                let all_text: String = content_parts.iter()
+                    .filter_map(|p| match p {
+                        IrContentPart::Text { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+
+                let (thinking_opt, clean) = split_thinking_and_content(&all_text);
+                content_parts.clear();
+                if let Some(thinking) = thinking_opt {
+                    content_parts.push(IrContentPart::Thinking { text: thinking });
+                }
+                let trimmed = clean.trim();
+                if !trimmed.is_empty() {
+                    content_parts.push(IrContentPart::Text { text: trimmed.to_string() });
+                }
+            }
+
             Ok(Some(IrMessage {
                 role,
                 content: content_parts,
@@ -439,6 +463,86 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 tool_calls: None,
             }))
         }
+        "reasoning" => {
+            let text = item.get("summary")
+                .and_then(|s| s.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|s| s.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default();
+
+            Ok(Some(IrMessage {
+                role: IrRole::Assistant,
+                content: if text.is_empty() {
+                    vec![]
+                } else {
+                    vec![IrContentPart::Thinking { text }]
+                },
+                name: None,
+                tool_call_id: None,
+                tool_calls: None,
+            }))
+        }
         _ => Ok(None),
     }
+}
+
+/// Extract `<thinking>...</thinking>` tagged content from text.
+/// Returns (thinking_content, remaining_text).
+fn split_thinking_and_content(text: &str) -> (Option<String>, String) {
+    let tag_start = "<thinking>";
+    let tag_end = "</thinking>";
+    let mut thinking = String::new();
+    let mut remaining = text.to_string();
+
+    while let Some(start_idx) = remaining.find(tag_start) {
+        let after_start = start_idx + tag_start.len();
+        if let Some(rel_end) = remaining[after_start..].find(tag_end) {
+            thinking.push_str(&remaining[after_start..after_start + rel_end]);
+            let end_abs = after_start + rel_end + tag_end.len();
+            remaining = format!("{}{}", &remaining[..start_idx], &remaining[end_abs..]);
+        } else {
+            break;
+        }
+    }
+
+    (if thinking.is_empty() { None } else { Some(thinking) }, remaining)
+}
+
+/// Merge consecutive assistant messages into one.
+///
+/// The Responses API represents each function_call as a separate input item,
+/// which `parse_input_item` converts to individual assistant messages.
+/// The Completions API requires all tool_calls in a single assistant message.
+fn merge_consecutive_assistant_messages(messages: Vec<IrMessage>) -> Vec<IrMessage> {
+    let mut result: Vec<IrMessage> = Vec::new();
+
+    for msg in messages {
+        if let Some(last) = result.last_mut() {
+            if last.role == IrRole::Assistant && msg.role == IrRole::Assistant {
+                if !msg.content.is_empty() {
+                    last.content
+                        .extend(msg.content.into_iter().filter(|p| {
+                            if let IrContentPart::Text { text } = p {
+                                !text.is_empty()
+                            } else {
+                                true
+                            }
+                        }));
+                }
+                match (&mut last.tool_calls, msg.tool_calls) {
+                    (Some(existing), Some(new)) => existing.extend(new),
+                    (None, Some(new)) => last.tool_calls = Some(new),
+                    _ => {}
+                }
+                continue;
+            }
+        }
+        result.push(msg);
+    }
+
+    result
 }

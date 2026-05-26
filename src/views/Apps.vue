@@ -28,44 +28,48 @@
               </n-space>
             </template>
 
-            <n-space vertical size="small">
-              <n-tag
-                :type="app.installed ? 'success' : 'error'"
-                size="small"
-              >
-                {{ app.installed ? '已安装' : '未安装' }}
-              </n-tag>
+            <div class="app-card-content">
+              <n-space vertical size="small">
+                <n-tag
+                  :type="app.installed ? 'success' : 'error'"
+                  size="small"
+                >
+                  {{ app.installed ? '已安装' : '未安装' }}
+                </n-tag>
 
-              <n-text
-                v-if="app.install_path"
-                depth="3"
-                style="font-size: 12px; word-break: break-all"
-              >
-                {{ app.install_path }}
-              </n-text>
+                <n-text
+                  v-if="app.install_path"
+                  depth="3"
+                  style="font-size: 12px; word-break: break-all"
+                >
+                  {{ app.install_path }}
+                </n-text>
 
-              <n-tag v-if="app.model" size="small" type="info">
-                {{ app.model }}
-              </n-tag>
+                <n-tag v-if="app.model" size="small" type="info">
+                  {{ app.model }}
+                </n-tag>
 
-              <n-text
-                v-if="app.launched_at"
-                depth="3"
-                style="font-size: 12px"
-              >
-                上次启动: {{ formatTime(app.launched_at) }}
-              </n-text>
+                <n-text
+                  v-if="app.launched_at"
+                  depth="3"
+                  style="font-size: 12px"
+                >
+                  上次启动: {{ formatTime(app.launched_at) }}
+                </n-text>
+              </n-space>
 
-              <n-button
-                type="primary"
-                size="small"
-                block
-                :disabled="!app.installed"
-                @click="openLaunchModal(app)"
-              >
-                打开
-              </n-button>
-            </n-space>
+              <div class="app-card-action">
+                <n-button
+                  type="primary"
+                  size="small"
+                  block
+                  :disabled="!app.installed"
+                  @click="openLaunchModal(app)"
+                >
+                  打开
+                </n-button>
+              </div>
+            </div>
           </n-card>
         </div>
       </n-spin>
@@ -79,17 +83,75 @@
       negative-text="取消"
       :loading="launchLoading"
       @positive-click="handleLaunch"
-      style="width: 480px"
+      style="width: 520px"
     >
       <n-space vertical size="medium">
         <n-text>应用: {{ launchForm.appName }}</n-text>
-        <n-select
-          v-model:value="launchForm.model"
-          :options="modelOptions"
-          filterable
-          tag
-          placeholder="选择或输入模型"
-        />
+
+        <n-space vertical size="small" style="width: 100%">
+          <n-text depth="3" style="font-size: 13px">默认模型</n-text>
+          <n-select
+            v-model:value="launchForm.model"
+            :options="modelOptions"
+            filterable
+            tag
+            placeholder="选择或输入模型"
+          />
+        </n-space>
+
+        <template v-if="isClaudeApp(launchForm.appType)">
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">Haiku 模型（可选）</n-text>
+            <n-select
+              v-model:value="launchForm.model_haiku"
+              :options="modelOptionsWithEmpty"
+              filterable
+              tag
+              clearable
+              placeholder="选择或输入 Haiku 模型"
+            />
+          </n-space>
+
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">Sonnet 模型（可选）</n-text>
+            <n-select
+              v-model:value="launchForm.model_sonnet"
+              :options="modelOptionsWithEmpty"
+              filterable
+              tag
+              clearable
+              placeholder="选择或输入 Sonnet 模型"
+            />
+          </n-space>
+
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">Opus 模型（可选）</n-text>
+            <n-select
+              v-model:value="launchForm.model_opus"
+              :options="modelOptionsWithEmpty"
+              filterable
+              tag
+              clearable
+              placeholder="选择或输入 Opus 模型"
+            />
+          </n-space>
+        </template>
+
+        <template v-if="isCliApp(launchForm.appType)">
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">工作目录</n-text>
+            <n-input-group>
+              <n-input
+                v-model:value="launchForm.work_dir"
+                placeholder="留空则使用默认目录"
+                style="flex: 1"
+              />
+              <n-button @click="browseWorkDir">
+                浏览
+              </n-button>
+            </n-input-group>
+          </n-space>
+        </template>
       </n-space>
     </n-modal>
 
@@ -105,10 +167,16 @@
     >
       <n-space vertical size="medium">
         <n-text>应用: {{ pathForm.appName }}</n-text>
-        <n-input
-          v-model:value="pathForm.install_path"
-          placeholder="留空则自动检测"
-        />
+        <n-input-group>
+          <n-input
+            v-model:value="pathForm.install_path"
+            placeholder="留空则自动检测"
+            style="flex: 1"
+          />
+          <n-button @click="browseInstallPath">
+            浏览
+          </n-button>
+        </n-input-group>
       </n-space>
     </n-modal>
   </n-space>
@@ -118,6 +186,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { SettingsOutline } from '@vicons/ionicons5'
+import { open } from '@tauri-apps/plugin-dialog'
 import { api } from '../api'
 import type { AppConfig, AppType, Provider, ProviderModel } from '../types'
 
@@ -132,6 +201,10 @@ const launchForm = ref({
   appType: '' as AppType,
   appName: '',
   model: '',
+  model_haiku: null as string | null,
+  model_sonnet: null as string | null,
+  model_opus: null as string | null,
+  work_dir: '',
 })
 
 const showPathModal = ref(false)
@@ -157,6 +230,28 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString('zh-CN')
 }
 
+function isClaudeApp(appType: AppType): boolean {
+  return appType === 'claude_cli' || appType === 'claude_desktop'
+}
+
+function isCliApp(appType: AppType): boolean {
+  return appType === 'codex_cli' || appType === 'claude_cli'
+}
+
+async function browseInstallPath() {
+  const selected = await open({ multiple: false })
+  if (typeof selected === 'string') {
+    pathForm.value.install_path = selected
+  }
+}
+
+async function browseWorkDir() {
+  const selected = await open({ directory: true, multiple: false })
+  if (typeof selected === 'string') {
+    launchForm.value.work_dir = selected
+  }
+}
+
 const modelOptions = computed(() => {
   const seen = new Set<string>()
   const options: { label: string; value: string }[] = []
@@ -167,6 +262,10 @@ const modelOptions = computed(() => {
     }
   }
   return options
+})
+
+const modelOptionsWithEmpty = computed(() => {
+  return modelOptions.value
 })
 
 async function fetchApps() {
@@ -194,24 +293,43 @@ function openLaunchModal(app: AppConfig) {
     appType: app.app_type,
     appName: displayName(app.app_type),
     model: app.model || '',
+    model_haiku: app.model_haiku || null,
+    model_sonnet: app.model_sonnet || null,
+    model_opus: app.model_opus || null,
+    work_dir: app.work_dir || '',
   }
   showLaunchModal.value = true
 }
 
 async function handleLaunch() {
   if (!launchForm.value.model) {
-    message.warning('请选择或输入模型')
+    message.warning('请选择或输入默认模型')
     return false
   }
 
   launchLoading.value = true
   try {
+    const body: Record<string, unknown> = {
+      app_type: launchForm.value.appType,
+      model: launchForm.value.model,
+    }
+
+    if (launchForm.value.model_haiku) {
+      body.model_haiku = launchForm.value.model_haiku
+    }
+    if (launchForm.value.model_sonnet) {
+      body.model_sonnet = launchForm.value.model_sonnet
+    }
+    if (launchForm.value.model_opus) {
+      body.model_opus = launchForm.value.model_opus
+    }
+    if (launchForm.value.work_dir.trim()) {
+      body.work_dir = launchForm.value.work_dir.trim()
+    }
+
     await api<void>('/api/apps/launch', {
       method: 'POST',
-      body: JSON.stringify({
-        app_type: launchForm.value.appType,
-        model: launchForm.value.model,
-      }),
+      body: JSON.stringify(body),
     })
     message.success('应用启动成功')
     showLaunchModal.value = false
@@ -264,5 +382,27 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
+}
+
+.app-grid > :deep(.n-card) {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-grid :deep(.n-card-content) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.app-card-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.app-card-action {
+  margin-top: auto;
+  padding-top: 8px;
 }
 </style>

@@ -69,6 +69,7 @@ fn sample_ir_response() -> IrResponse {
             prompt_tokens: 10,
             completion_tokens: 5,
             total_tokens: 15,
+            cached_tokens: 0,
         },
     }
 }

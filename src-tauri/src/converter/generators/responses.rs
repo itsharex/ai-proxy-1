@@ -199,6 +199,15 @@ impl FormatGenerator for ResponsesGenerator {
             return format!("data: {}\n\ndata: {}\n\ndata: {}\n\n", text_done, item_done, completed);
         }
 
+        if let Some(thinking) = &chunk.delta_thinking {
+            let delta_event = json!({
+                "type": "response.output_text.delta",
+                "delta": format!("<thinking>{}</thinking>", thinking),
+                "response_id": response_id,
+            });
+            return format!("data: {}\n\n", delta_event);
+        }
+
         if let Some(content) = &chunk.delta_content {
             let delta_event = json!({
                 "type": "response.output_text.delta",
@@ -250,6 +259,15 @@ impl FormatGenerator for ResponsesGenerator {
 
         let mut output: Vec<Value> = Vec::new();
 
+        let thinking_text = extract_thinking_content(&ir.message.content);
+        if !thinking_text.is_empty() {
+            output.push(json!({
+                "type": "reasoning",
+                "id": "rs_proxy",
+                "summary": [{"type": "summary_text", "text": thinking_text}],
+            }));
+        }
+
         let text = extract_text_content(&ir.message.content);
         if !text.is_empty() {
             output.push(json!({
@@ -294,6 +312,17 @@ fn extract_text_content(parts: &[IrContentPart]) -> String {
         .iter()
         .filter_map(|part| match part {
             IrContentPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn extract_thinking_content(parts: &[IrContentPart]) -> String {
+    parts
+        .iter()
+        .filter_map(|part| match part {
+            IrContentPart::Thinking { text } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
