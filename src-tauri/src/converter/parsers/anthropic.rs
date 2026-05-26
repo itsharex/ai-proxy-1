@@ -234,13 +234,22 @@ impl FormatParser for AnthropicParser {
                 let delta = &event["delta"];
                 let stop_reason = delta["stop_reason"].as_str().map(String::from);
 
-                let usage = event.get("usage").and_then(|u| {
-                    Some(IrUsage {
-                        prompt_tokens: 0,
-                        completion_tokens: u["output_tokens"].as_u64()? as u32,
-                        total_tokens: u["output_tokens"].as_u64()? as u32,
-                        cached_tokens: 0,
-                    })
+                let usage = event.get("usage").map(|u| {
+                    let output = u["output_tokens"].as_u64()
+                        .or_else(|| u["completion_tokens"].as_u64())
+                        .unwrap_or(0);
+                    let input = u["input_tokens"].as_u64()
+                        .or_else(|| u["prompt_tokens"].as_u64())
+                        .unwrap_or(0);
+                    let cached = u["cache_read_input_tokens"].as_u64()
+                        .or_else(|| u["cached_tokens"].as_u64())
+                        .unwrap_or(0);
+                    IrUsage {
+                        prompt_tokens: input as u32,
+                        completion_tokens: output as u32,
+                        total_tokens: (input + output) as u32,
+                        cached_tokens: cached as u32,
+                    }
                 });
 
                 Ok(Some(IrStreamChunk {
@@ -258,13 +267,18 @@ impl FormatParser for AnthropicParser {
                 let id = message["id"].as_str().map(String::from);
                 let model = message["model"].as_str().map(String::from);
 
-                let usage = message.get("usage").and_then(|u| {
-                    Some(IrUsage {
-                        prompt_tokens: u["input_tokens"].as_u64()? as u32,
+                let usage = message.get("usage").map(|u| {
+                    let input = u["input_tokens"].as_u64()
+                        .or_else(|| u["prompt_tokens"].as_u64())
+                        .unwrap_or(0);
+                    IrUsage {
+                        prompt_tokens: input as u32,
                         completion_tokens: 0,
-                        total_tokens: u["input_tokens"].as_u64()? as u32,
-                        cached_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0) as u32,
-                    })
+                        total_tokens: input as u32,
+                        cached_tokens: u["cache_read_input_tokens"].as_u64()
+                            .or_else(|| u["cached_tokens"].as_u64())
+                            .unwrap_or(0) as u32,
+                    }
                 });
 
                 Ok(Some(IrStreamChunk {
@@ -359,12 +373,21 @@ impl FormatParser for AnthropicParser {
 
         let usage = body
             .get("usage")
-            .map(|u| IrUsage {
-                prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32,
-                completion_tokens: u["output_tokens"].as_u64().unwrap_or(0) as u32,
-                total_tokens: u["input_tokens"].as_u64().unwrap_or(0) as u32
-                    + u["output_tokens"].as_u64().unwrap_or(0) as u32,
-                cached_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0) as u32,
+            .map(|u| {
+                let input = u["input_tokens"].as_u64()
+                    .or_else(|| u["prompt_tokens"].as_u64())
+                    .unwrap_or(0);
+                let output = u["output_tokens"].as_u64()
+                    .or_else(|| u["completion_tokens"].as_u64())
+                    .unwrap_or(0);
+                IrUsage {
+                    prompt_tokens: input as u32,
+                    completion_tokens: output as u32,
+                    total_tokens: (input + output) as u32,
+                    cached_tokens: u["cache_read_input_tokens"].as_u64()
+                        .or_else(|| u["cached_tokens"].as_u64())
+                        .unwrap_or(0) as u32,
+                }
             })
             .unwrap_or(IrUsage {
                 prompt_tokens: 0,
