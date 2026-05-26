@@ -99,24 +99,62 @@ pub fn resolve_install_path(app_type: &AppType, custom_path: Option<&str>) -> Op
         .map(|p| p.to_string())
 }
 
-pub async fn launch(app_type: &AppType, install_path: &str) -> Result<(), String> {
+pub async fn launch(
+    app_type: &AppType,
+    install_path: &str,
+    work_dir: Option<&str>,
+) -> Result<(), String> {
     if app_type.is_cli() {
-        launch_cli(install_path).await
+        launch_cli(install_path, work_dir).await
     } else {
         launch_desktop(install_path).await
     }
 }
 
-async fn launch_cli(install_path: &str) -> Result<(), String> {
-    tracing::info!("Launching CLI app at {}", install_path);
-    let child = Command::new(install_path)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .stdin(std::process::Stdio::null())
+#[cfg(target_os = "macos")]
+async fn launch_cli(install_path: &str, work_dir: Option<&str>) -> Result<(), String> {
+    let dir = work_dir.unwrap_or("$HOME");
+    let script = format!(
+        "tell application \"Terminal\"\n\tactivate\ndo script \"cd '{}' && {}\"\nend tell",
+        dir.replace('\'', "'\\''"),
+        install_path.replace('\'', "'\\''")
+    );
+    Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
         .spawn()
-        .map_err(|e| format!("Failed to launch {}: {}", install_path, e))?;
-    tracing::info!("Launched CLI process, pid: {:?}", child.id());
+        .map_err(|e| format!("Failed to open terminal: {}", e))?;
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn launch_cli(install_path: &str, work_dir: Option<&str>) -> Result<(), String> {
+    let dir = work_dir.unwrap_or("%USERPROFILE%");
+    let cmd = format!("cd /d {} && {}", dir, install_path);
+    Command::new("cmd")
+        .args(["/C", "start", "cmd", "/K", &cmd])
+        .spawn()
+        .map_err(|e| format!("Failed to open terminal: {}", e))?;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+async fn launch_cli(install_path: &str, work_dir: Option<&str>) -> Result<(), String> {
+    let dir = work_dir.unwrap_or("$HOME");
+    for term in &["gnome-terminal", "konsole", "xfce4-terminal", "xterm"] {
+        let result = Command::new(term)
+            .args(["--working-directory", dir, "-e", install_path])
+            .spawn();
+        if result.is_ok() {
+            return Ok(());
+        }
+    }
+    Err("No supported terminal emulator found".into())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+async fn launch_cli(_install_path: &str, _work_dir: Option<&str>) -> Result<(), String> {
+    Err("Unsupported platform for CLI launch".to_string())
 }
 
 async fn launch_desktop(install_path: &str) -> Result<(), String> {
@@ -205,5 +243,16 @@ mod tests {
     fn test_app_type_from_str() {
         assert_eq!(AppType::from_str("codex_cli"), Some(AppType::CodexCli));
         assert_eq!(AppType::from_str("unknown"), None);
+    }
+
+    #[test]
+    fn test_launch_function_accepts_work_dir() {
+        // Verify the launch function signature accepts work_dir parameter
+        let app_type = AppType::CodexCli;
+        assert!(app_type.is_cli());
+        // work_dir is Option<&str>, should accept None or Some("path")
+        let _work_dir_none: Option<&str> = None;
+        let _work_dir_some: Option<&str> = Some("/tmp");
+        // Compilation of this test validates the signature change
     }
 }

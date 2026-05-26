@@ -5,6 +5,8 @@ use crate::apps::config;
 use crate::apps::launcher;
 use crate::apps::types::{AppConfig, AppType, DbAppConfig, LaunchRequest, SetPathRequest};
 use crate::db::get_pool;
+use crate::key::rotation::{KeyRotation, RotationStrategy};
+use crate::key::store::decrypt_api_key;
 use crate::server::api::{ok, err_json, ApiError, ApiResponse};
 
 pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
@@ -132,7 +134,28 @@ pub async fn launch_app(
     let now = chrono::Utc::now().to_rfc3339();
 
     // Write config file
-    if let Err(e) = config::write_config(&app_type, &body.model, &proxy_url).await {
+    let model_haiku = body.model_haiku.as_deref();
+    let model_sonnet = body.model_sonnet.as_deref();
+    let model_opus = body.model_opus.as_deref();
+
+    // Resolve an API key for Claude Desktop gateway config
+    let api_key = if app_type.is_claude() {
+        resolve_api_key_for_claude(&app_type).await.unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    if let Err(e) = config::write_config(
+        &app_type,
+        &body.model,
+        model_haiku,
+        model_sonnet,
+        model_opus,
+        &proxy_url,
+        &api_key,
+    )
+    .await
+    {
         // Save error status to DB
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -153,7 +176,8 @@ pub async fn launch_app(
     let config_path = config::config_path_for(&app_type).to_string_lossy().to_string();
 
     // Launch the app
-    if let Err(e) = launcher::launch(&app_type, &install_path).await {
+    let work_dir = body.work_dir.as_deref();
+    if let Err(e) = launcher::launch(&app_type, &install_path, work_dir).await {
         // Save error status to DB
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -246,4 +270,22 @@ pub async fn set_app_path(
     }
 
     Ok(ok(()))
+}
+
+async fn resolve_api_key_for_claude(app_type: &AppType) -> Result<String, String> {
+    let _ = app_type; // Both Claude CLI and Desktop use the anthropic provider
+    let provider_id = "anthropic";
+
+    let selected_key = KeyRotation::get_next_key(provider_id, &RotationStrategy::LeastUsed)
+        .await
+        .map_err(|e| format!("Failed to get API key: {}", e))?;
+
+    let nonce_array: [u8; 12] = selected_key
+        .nonce
+        .as_slice()
+        .try_into()
+        .map_err(|_| "Invalid nonce length".to_string())?;
+
+    decrypt_api_key(&selected_key.encrypted_key, &nonce_array)
+        .map_err(|e| format!("Failed to decrypt API key: {}", e))
 }
