@@ -20,9 +20,9 @@ pub fn claude_cli_config_path() -> PathBuf {
 }
 
 pub fn claude_desktop_3p_dir() -> PathBuf {
-    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
     #[cfg(target_os = "macos")]
     {
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         home.join("Library")
             .join("Application Support")
             .join("Claude-3p")
@@ -33,6 +33,7 @@ pub fn claude_desktop_3p_dir() -> PathBuf {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         home.join(".config").join("Claude-3p")
     }
 }

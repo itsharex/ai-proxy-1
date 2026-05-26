@@ -576,7 +576,6 @@ async fn handle_proxy(
                                         yield Ok::<_, std::convert::Infallible>(Bytes::from(
                                             format!("event: content_block_stop\ndata: {{\"type\":\"content_block_stop\",\"index\":{}}}\n\n", content_block_index - 1)
                                         ));
-                                        tool_block_open = false;
                                     }
                                     // Emit content_block_start for tool_use
                                     let block_start = serde_json::json!({

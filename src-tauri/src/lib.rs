@@ -129,6 +129,19 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+fn should_show_main_window_for_run_event(event: &tauri::RunEvent) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        matches!(event, tauri::RunEvent::Reopen { .. })
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = event;
+        false
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt::init();
@@ -199,8 +212,18 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::Reopen { .. } = event {
+            if should_show_main_window_for_run_event(&event) {
                 show_main_window(app_handle);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_show_main_window_for_run_event;
+
+    #[test]
+    fn ready_event_does_not_request_window_restore() {
+        assert!(!should_show_main_window_for_run_event(&tauri::RunEvent::Ready));
+    }
 }
