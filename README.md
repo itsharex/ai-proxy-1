@@ -44,6 +44,33 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
+## GitHub Actions 自动打包
+
+仓库已配置 GitHub Actions，可在推送版本 tag 时自动打包桌面应用。
+
+### 触发方式
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+也可以在 GitHub 的 Actions 页面手动触发 `Build Desktop App` workflow。
+
+### 当前产物
+
+- macOS 构建产物
+- Windows 构建产物
+
+构建完成后，可在对应 workflow run 的 `Artifacts` 中下载打包结果。
+
+### 当前限制
+
+- 暂不包含 macOS 签名与公证
+- 暂不包含 Windows 签名
+- 暂不自动创建 GitHub Release
+- 暂未包含 Linux 构建
+
 ## 项目结构
 
 ```
