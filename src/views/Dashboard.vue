@@ -27,7 +27,7 @@
             <template #prefix>
               <n-icon :component="DocumentTextOutline" />
             </template>
-            {{ todayRequests }}
+            {{ formatNumber(todayRequests) }}
           </n-statistic>
         </n-card>
       </n-gi>
@@ -37,7 +37,7 @@
             <template #prefix>
               <n-icon :component="PulseOutline" />
             </template>
-            {{ todayTokens }}
+            {{ formatNumber(todayTokens) }}
           </n-statistic>
         </n-card>
       </n-gi>
@@ -142,6 +142,12 @@ function formatUtcTime(utcStr: string): string {
   }).replace(/\//g, '-')
 }
 
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
 const logColumns = [
   {
     title: '时间',
@@ -160,6 +166,6 @@ const logColumns = [
       return h(NTag, { size: 'small', type: code < 400 ? 'success' : 'error' }, () => String(code))
     },
   },
-  { title: '耗时', key: 'duration_ms', width: 100, render: (row: Record<string, unknown>) => `${row.duration_ms}ms` },
+  { title: '耗时', key: 'duration_ms', width: 100, render: (row: Record<string, unknown>) => `${((row.duration_ms as number) / 1000).toFixed(1)}s` },
 ]
 </script>

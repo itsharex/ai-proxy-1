@@ -720,22 +720,16 @@ async fn handle_proxy(
                                         ));
                                         started = true;
                                     }
-                                    // Close thinking/text/message before starting a tool call.
-                                    if let Some(close_tag) = close_responses_thinking_if_needed(
+                                    // Close reasoning summary before starting a tool call.
+                                    if let Some(done_sse) = close_responses_thinking_if_needed(
                                         &mut resp_thinking_started,
-                                        &mut resp_accumulated_text,
+                                        &mut resp_accumulated_reasoning,
                                         true,
+                                        &response_id,
+                                        resp_output_index,
                                     ) {
-                                        let close_event = serde_json::json!({
-                                            "type": "response.output_text.delta",
-                                            "output_index": resp_output_index - 1,
-                                            "content_index": 0,
-                                            "delta": close_tag,
-                                            "response_id": response_id,
-                                        });
-                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
-                                            format!("data: {}\n\n", close_event)
-                                        ));
+                                        resp_output_index += 1;
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(done_sse));
                                     }
 
                                     // Close text part + message if open
@@ -835,11 +829,10 @@ async fn handle_proxy(
                             }
                         }
 
-                        // Thinking / reasoning_content — output as plain text deltas
-                        // so Codex preserves it and sends it back in multi-turn
+                        // Thinking / reasoning_content — output as reasoning summary events
                         if let Some(thinking) = &ir_chunk.delta_thinking {
                             if !thinking.is_empty() && !resp_func_open {
-                                if !resp_message_open {
+                                if !resp_message_open && !resp_thinking_started {
                                     // Emit response.created if not started
                                     if !started {
                                         let created = serde_json::json!({
@@ -855,46 +848,29 @@ async fn handle_proxy(
                                         yield Ok::<_, std::convert::Infallible>(Bytes::from(
                                             format!("data: {}\n\n", created)
                                         ));
+                                        started = true;
                                     }
-                                    let item_added = serde_json::json!({
-                                        "type": "response.output_item.added",
-                                        "output_index": resp_output_index,
-                                        "item": {
-                                            "type": "message",
-                                            "id": "msg_proxy",
-                                            "role": "assistant",
-                                            "content": [],
-                                            "status": "in_progress",
-                                        }
-                                    });
+                                }
+                                // First thinking chunk: emit reasoning summary part added
+                                if !resp_thinking_started {
                                     let part_added = serde_json::json!({
-                                        "type": "response.content_part.added",
+                                        "type": "response.reasoning_summary_part.added",
                                         "output_index": resp_output_index,
                                         "content_index": 0,
-                                        "part": {"type": "output_text", "text": ""},
+                                        "part": {"type": "summary_text", "text": ""},
+                                        "response_id": response_id,
                                     });
                                     yield Ok::<_, std::convert::Infallible>(Bytes::from(
-                                        format!("data: {}\n\ndata: {}\n\n", item_added, part_added)
+                                        format!("data: {}\n\n", part_added)
                                     ));
-                                    resp_message_open = true;
-                                    resp_text_part_open = true;
-                                    resp_output_index += 1;
-                                    started = true;
-                                }
-                                // First thinking chunk: output opening tag
-                                let mut output_text = String::new();
-                                if !resp_thinking_started {
-                                    output_text.push_str("<thinking>");
                                     resp_thinking_started = true;
                                 }
-                                output_text.push_str(thinking);
-                                resp_accumulated_text.push_str(&output_text);
                                 resp_accumulated_reasoning.push_str(thinking);
                                 let delta_event = serde_json::json!({
-                                    "type": "response.output_text.delta",
-                                    "output_index": resp_output_index - 1,
+                                    "type": "response.reasoning_summary_text.delta",
+                                    "output_index": resp_output_index,
                                     "content_index": 0,
-                                    "delta": output_text,
+                                    "delta": thinking,
                                     "response_id": response_id,
                                 });
                                 yield Ok::<_, std::convert::Infallible>(Bytes::from(
@@ -907,22 +883,16 @@ async fn handle_proxy(
                         // Text content
                         if let Some(content) = &ir_chunk.delta_content {
                             if !content.is_empty() && !resp_func_open {
-                                // Close thinking tag if we were in thinking mode
-                                if let Some(close_tag) = close_responses_thinking_if_needed(
+                                // Close reasoning summary if we were in thinking mode
+                                if let Some(done_sse) = close_responses_thinking_if_needed(
                                     &mut resp_thinking_started,
-                                    &mut resp_accumulated_text,
+                                    &mut resp_accumulated_reasoning,
                                     true,
+                                    &response_id,
+                                    resp_output_index,
                                 ) {
-                                    let close_event = serde_json::json!({
-                                        "type": "response.output_text.delta",
-                                        "output_index": resp_output_index - 1,
-                                        "content_index": 0,
-                                        "delta": close_tag,
-                                        "response_id": response_id,
-                                    });
-                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(
-                                        format!("data: {}\n\n", close_event)
-                                    ));
+                                    resp_output_index += 1;
+                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(done_sse));
                                 }
 
                                 if !resp_message_open {
@@ -984,22 +954,16 @@ async fn handle_proxy(
 
                         // Finish
                         if ir_chunk.finish_reason.is_some() {
-                            // Close thinking tag if still open
-                            if let Some(close_tag) = close_responses_thinking_if_needed(
+                            // Close reasoning summary if still open
+                            if let Some(done_sse) = close_responses_thinking_if_needed(
                                 &mut resp_thinking_started,
-                                &mut resp_accumulated_text,
+                                &mut resp_accumulated_reasoning,
                                 false,
+                                &response_id,
+                                resp_output_index,
                             ) {
-                                let close_event = serde_json::json!({
-                                    "type": "response.output_text.delta",
-                                    "output_index": resp_output_index - 1,
-                                    "content_index": 0,
-                                    "delta": close_tag,
-                                    "response_id": response_id,
-                                });
-                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
-                                    format!("data: {}\n\n", close_event)
-                                ));
+                                resp_output_index += 1;
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(done_sse));
                             }
 
                             // Close func_call if open
@@ -1468,23 +1432,30 @@ impl Drop for StreamLoggingGuard {
 
 /// Split `<thinking>...</thinking>` from text.
 /// Returns (thinking_content, remaining_text).
+/// Emit reasoning summary done event when thinking ends.
 fn close_responses_thinking_if_needed(
     thinking_started: &mut bool,
-    accumulated_text: &mut String,
-    append_newline: bool,
+    accumulated_reasoning: &mut String,
+    _append_newline: bool,
+    response_id: &str,
+    output_index: u32,
 ) -> Option<String> {
     if !*thinking_started {
         return None;
     }
 
-    let close_tag = if append_newline {
-        "</thinking>\n"
-    } else {
-        "</thinking>"
-    };
-    accumulated_text.push_str(close_tag);
     *thinking_started = false;
-    Some(close_tag.to_string())
+    let done_event = serde_json::json!({
+        "type": "response.reasoning_summary_part.done",
+        "output_index": output_index,
+        "content_index": 0,
+        "part": {
+            "type": "summary_text",
+            "text": accumulated_reasoning.clone(),
+        },
+        "response_id": response_id,
+    });
+    Some(format!("data: {}\n\n", done_event))
 }
 
 fn inject_cached_reasoning_into_assistant_messages(
@@ -1573,17 +1544,21 @@ mod tests {
     #[test]
     fn closes_thinking_before_tool_call_boundary() {
         let mut thinking_started = true;
-        let mut accumulated_text = "<thinking>repo analysis".to_string();
+        let mut accumulated_reasoning = "repo analysis".to_string();
 
-        let close_tag = close_responses_thinking_if_needed(
+        let done_sse = close_responses_thinking_if_needed(
             &mut thinking_started,
-            &mut accumulated_text,
+            &mut accumulated_reasoning,
             true,
+            "resp_test",
+            0,
         );
 
-        assert_eq!(close_tag.as_deref(), Some("</thinking>\n"));
+        assert!(done_sse.is_some());
         assert!(!thinking_started);
-        assert_eq!(accumulated_text, "<thinking>repo analysis</thinking>\n");
+        let sse = done_sse.unwrap();
+        assert!(sse.contains("response.reasoning_summary_part.done"));
+        assert!(sse.contains("repo analysis"));
     }
 
     #[test]

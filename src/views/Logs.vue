@@ -79,6 +79,12 @@ function formatUtcTime(utcStr: string): string {
   }).replace(/\//g, '-')
 }
 
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
 const columns = [
   {
     title: '时间',
@@ -117,8 +123,8 @@ const columns = [
     width: 130,
     render: (row: RequestLog) =>
       h(NSpace, { size: 4 }, () => [
-        h(NTag, { size: 'small' }, () => String(row.prompt_tokens)),
-        h(NTag, { size: 'small', type: 'info' }, () => String(row.cached_tokens)),
+        h(NTag, { size: 'small' }, () => formatNumber(row.prompt_tokens)),
+        h(NTag, { size: 'small', type: 'info' }, () => formatNumber(row.cached_tokens)),
       ]),
   },
   {
@@ -132,7 +138,7 @@ const columns = [
       return h(NTag, { size: 'small', type }, () => `${rate}%`)
     },
   },
-  { title: '输出', key: 'completion_tokens', width: 100 },
+  { title: '输出', key: 'completion_tokens', width: 100, render: (row: RequestLog) => formatNumber(row.completion_tokens) },
   {
     title: '用时/首字',
     key: 'ttft_ms',

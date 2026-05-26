@@ -201,8 +201,10 @@ impl FormatGenerator for ResponsesGenerator {
 
         if let Some(thinking) = &chunk.delta_thinking {
             let delta_event = json!({
-                "type": "response.output_text.delta",
-                "delta": format!("<thinking>{}</thinking>", thinking),
+                "type": "response.reasoning_summary_text.delta",
+                "output_index": 0,
+                "content_index": 0,
+                "delta": thinking,
                 "response_id": response_id,
             });
             return format!("data: {}\n\n", delta_event);
