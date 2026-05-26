@@ -9,6 +9,7 @@ mod usage;
 mod logging;
 mod server;
 mod apps;
+mod update;
 
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
@@ -202,7 +203,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config])
+        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, update::check_for_update])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
