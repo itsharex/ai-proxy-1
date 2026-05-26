@@ -28,6 +28,7 @@
         :data="logs"
         :loading="loading"
         :bordered="false"
+        remote
         :pagination="pagination"
         :row-key="(row: RequestLog) => row.id"
         @update:page="handlePageChange"
@@ -55,7 +56,6 @@ const pagination = computed(() => ({
   page: currentPage.value,
   pageSize: pageSize.value,
   itemCount: total.value,
-  remote: true,
   showSizePicker: true,
   pageSizes: [10, 20, 50, 100],
   prefix: ({ itemCount }: { itemCount: number }) => `共 ${itemCount} 条`,
