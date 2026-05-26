@@ -33,8 +33,15 @@ pub async fn fetch_latest_release() -> Result<GithubRelease, String> {
         .await
         .map_err(|e| format!("Failed to fetch release info: {e}"))?;
 
+    if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+        return Err("Not modified".to_string());
+    }
+
     if !response.status().is_success() {
-        return Err(format!("GitHub API returned status: {}", response.status()));
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        tracing::warn!("GitHub API error response: {}", body);
+        return Err(format!("GitHub API returned status: {}", status));
     }
 
     response
