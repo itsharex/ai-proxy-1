@@ -28,8 +28,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { useMessage } from 'naive-ui'
 import { openUrl } from '@tauri-apps/plugin-opener'
+import { listen } from '@tauri-apps/api/event'
+import { isTauri } from '../utils/env'
 
 interface UpdateInfo {
   version: string
@@ -38,12 +41,26 @@ interface UpdateInfo {
   published_at: string
 }
 
+const message = useMessage()
 const visible = ref(false)
 const updateInfo = ref<UpdateInfo>({
   version: '',
   release_notes: '',
   download_url: '',
   published_at: '',
+})
+
+let unlisten: (() => void) | null = null
+
+onMounted(async () => {
+  if (!isTauri) return
+  unlisten = await listen('up-to-date', () => {
+    message.success('已是最新版本')
+  })
+})
+
+onUnmounted(() => {
+  unlisten?.()
 })
 
 function show(info: UpdateInfo) {

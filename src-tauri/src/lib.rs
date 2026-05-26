@@ -13,6 +13,7 @@ mod update;
 mod update_timer;
 
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use std::sync::Mutex;
@@ -174,8 +175,9 @@ pub fn run() {
             start_proxy();
             update_timer::start_update_timer(app.handle().clone());
 
+            let check_update_item = MenuItem::with_id(app, "check-update", "Check for Updates", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&quit_item])?;
+            let menu = Menu::with_items(app, &[&check_update_item, &quit_item])?;
 
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
 
@@ -188,6 +190,25 @@ pub fn run() {
                     if event.id() == "quit" {
                         stop_proxy();
                         app.exit(0);
+                    } else if event.id() == "check-update" {
+                        let app_handle = app.clone();
+                        let handle = {
+                            let guard = APP_RUNTIME.lock().unwrap();
+                            guard.as_ref().expect("runtime not initialized").handle().clone()
+                        };
+                        handle.spawn(async move {
+                            match update::check_update(&app_handle).await {
+                                Ok(Some(info)) => {
+                                    let _ = app_handle.emit("update-available", &info);
+                                }
+                                Ok(None) => {
+                                    let _ = app_handle.emit("up-to-date", ());
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Manual update check failed: {}", e);
+                                }
+                            }
+                        });
                     }
                 })
                 .on_tray_icon_event(|tray, event| {
