@@ -65,7 +65,35 @@ impl FormatGenerator for AnthropicGenerator {
         }
 
         if let Some(tool_choice) = &ir.tool_choice {
-            body["tool_choice"] = tool_choice.clone();
+            let converted = match tool_choice {
+                Value::String(s) => match s.as_str() {
+                    "auto" => json!({"type": "auto"}),
+                    "required" => json!({"type": "any"}),
+                    "none" => json!({"type": "none"}),
+                    _ => json!({"type": "auto"}),
+                },
+                Value::Object(map) => {
+                    if let Some(t) = map.get("type").and_then(|v| v.as_str()) {
+                        match t {
+                            "function" => {
+                                if let Some(name) = map.get("function")
+                                    .and_then(|f| f.get("name"))
+                                    .and_then(|n| n.as_str())
+                                {
+                                    json!({"type": "tool", "name": name})
+                                } else {
+                                    json!({"type": "auto"})
+                                }
+                            }
+                            other => json!({"type": other}),
+                        }
+                    } else {
+                        tool_choice.clone()
+                    }
+                }
+                _ => json!({"type": "auto"}),
+            };
+            body["tool_choice"] = converted;
         }
 
         if let Some(temperature) = ir.temperature {

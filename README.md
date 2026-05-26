@@ -80,6 +80,7 @@ src/                        # Vue 3 前端
     Providers.vue           # 供应商管理
     Models.vue              # 模型总览
     Rules.vue               # 拦截规则
+    Apps.vue                # 应用管理
     Logs.vue                # 请求日志
     Statistics.vue          # 用量统计
     Settings.vue            # 设置
@@ -100,6 +101,7 @@ src-tauri/                  # Rust 后端
     provider/               # 供应商与模型路由
     key/                    # API Key 加密存储与轮换
     interceptor/            # 拦截规则引擎
+    apps/                   # 应用管理与启动器
     usage/                  # 用量追踪与成本估算
     logging/                # 请求日志
     db/                     # 数据库初始化与连接池

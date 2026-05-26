@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 
 .dbg
+
+# Local docs
+docs/superpowers
+
+# Local agent skills
+.agents

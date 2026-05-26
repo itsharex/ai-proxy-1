@@ -178,10 +178,46 @@ async fn launch_cli(_install_path: &str, _work_dir: Option<&str>) -> Result<(), 
     Err("Unsupported platform for CLI launch".to_string())
 }
 
+async fn kill_existing_desktop(install_path: &str) {
+    let name = PathBuf::from(install_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = Command::new("pkill")
+            .args(["-x", &name])
+            .output()
+            .await;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = Command::new("pkill")
+            .args(["-x", &name])
+            .output()
+            .await;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let exe_name = format!("{}.exe", name);
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", &exe_name])
+            .output()
+            .await;
+    }
+
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+}
+
 async fn launch_desktop(install_path: &str) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         tracing::info!("Launching macOS desktop app at {}", install_path);
+        kill_existing_desktop(install_path).await;
         Command::new("open")
             .arg(install_path)
             .spawn()
@@ -192,6 +228,7 @@ async fn launch_desktop(install_path: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         tracing::info!("Launching Linux desktop app at {}", install_path);
+        kill_existing_desktop(install_path).await;
         Command::new("xdg-open")
             .arg(install_path)
             .spawn()
@@ -202,6 +239,7 @@ async fn launch_desktop(install_path: &str) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         tracing::info!("Launching Windows desktop app at {}", install_path);
+        kill_existing_desktop(install_path).await;
         Command::new("cmd")
             .args(["/C", "start", "", install_path])
             .spawn()
