@@ -129,8 +129,26 @@ onMounted(async () => {
   }
 })
 
+function formatUtcTime(utcStr: string): string {
+  const date = new Date(utcStr + 'Z')
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).replace(/\//g, '-')
+}
+
 const logColumns = [
-  { title: '时间', key: 'created_at', width: 180 },
+  {
+    title: '时间',
+    key: 'created_at',
+    width: 180,
+    render: (row: Record<string, unknown>) => formatUtcTime(row.created_at as string),
+  },
   { title: '模型', key: 'model', width: 160 },
   { title: '供应商', key: 'provider_name', width: 120 },
   {

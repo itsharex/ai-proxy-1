@@ -243,7 +243,9 @@ impl FormatParser for ResponsesParser {
                         completion_tokens: u["output_tokens"].as_u64()? as u32,
                         total_tokens: u["input_tokens"].as_u64()? as u32
                             + u["output_tokens"].as_u64()? as u32,
-                        cached_tokens: 0,
+                        cached_tokens: u.get("input_tokens_details")
+                            .and_then(|d| d["cached_tokens"].as_u64())
+                            .unwrap_or(0) as u32,
                     })
                 });
 
@@ -332,7 +334,9 @@ impl FormatParser for ResponsesParser {
                     completion_tokens: u["output_tokens"].as_u64()? as u32,
                     total_tokens: u["input_tokens"].as_u64()? as u32
                         + u["output_tokens"].as_u64()? as u32,
-                    cached_tokens: 0,
+                    cached_tokens: u.get("input_tokens_details")
+                        .and_then(|d| d["cached_tokens"].as_u64())
+                        .unwrap_or(0) as u32,
                 })
             })
             .unwrap_or(IrUsage {

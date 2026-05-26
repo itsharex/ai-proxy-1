@@ -238,7 +238,9 @@ impl FormatParser for CompletionsParser {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
                 completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
                 total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
-                cached_tokens: 0,
+                cached_tokens: u.get("prompt_tokens_details")
+                    .and_then(|d| d["cached_tokens"].as_u64())
+                    .unwrap_or(0) as u32,
             }),
         }))
     }
@@ -301,7 +303,9 @@ impl FormatParser for CompletionsParser {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
                 completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
                 total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
-                cached_tokens: 0,
+                cached_tokens: u.get("prompt_tokens_details")
+                    .and_then(|d| d["cached_tokens"].as_u64())
+                    .unwrap_or(0) as u32,
             }).unwrap_or(IrUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0 }),
         })
     }

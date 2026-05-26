@@ -66,8 +66,26 @@ function statusCodeColor(code: number): 'success' | 'warning' | 'error' {
   return 'error'
 }
 
+function formatUtcTime(utcStr: string): string {
+  const date = new Date(utcStr + 'Z')
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).replace(/\//g, '-')
+}
+
 const columns = [
-  { title: '时间', key: 'created_at', width: 180 },
+  {
+    title: '时间',
+    key: 'created_at',
+    width: 180,
+    render: (row: RequestLog) => formatUtcTime(row.created_at),
+  },
   { title: '模型', key: 'model', width: 140 },
   { title: '供应商', key: 'provider_name', width: 100 },
   {
@@ -195,10 +213,3 @@ onMounted(() => {
   fetchLogs()
 })
 </script>
-
-<style scoped>
-:deep(.n-data-table-th__title),
-:deep(.n-data-table-td) {
-  white-space: nowrap;
-}
-</style>

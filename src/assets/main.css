@@ -5,3 +5,10 @@
 *::-webkit-scrollbar {
   display: none;
 }
+
+.n-data-table-td,
+.n-data-table-th__title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
