@@ -4,7 +4,8 @@ use tokio::process::Command;
 
 /// Create a Command with CREATE_NO_WINDOW flag on Windows to prevent console window flash.
 fn quiet_command(program: &str) -> Command {
-    let cmd = Command::new(program);
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
