@@ -66,8 +66,8 @@ sed -i.bak '3s/^version = "[^"]*"/version = "'"$VERSION"'"/' "$CARGO_TOML"
 rm -f "$PKG_JSON.bak" "$TAURI_CONF.bak" "$CARGO_TOML.bak"
 
 # Verify all three files match
-PKG_VER=$(grep '"version"' "$PKG_JSON" | head -1 | grep -o '"[^"]*"$' | tr -d '"')
-TAURI_VER=$(grep '"version"' "$TAURI_CONF" | head -1 | grep -o '"[^"]*"$' | tr -d '"')
+PKG_VER=$(grep '"version"' "$PKG_JSON" | head -1 | grep -o '"[^"]*"' | tail -1 | tr -d '"')
+TAURI_VER=$(grep '"version"' "$TAURI_CONF" | head -1 | grep -o '"[^"]*"' | tail -1 | tr -d '"')
 CARGO_VER=$(grep '^version = ' "$CARGO_TOML" | head -1 | grep -o '"[^"]*"' | tr -d '"')
 
 echo "  package.json:      $PKG_VER"
