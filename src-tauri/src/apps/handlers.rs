@@ -159,7 +159,9 @@ pub async fn launch_app(
     let model_config_json = build_model_config(&body);
 
     // Resolve an API key: Claude uses upstream anthropic key; Codex uses proxy auth key
-    let api_key = if app_type.is_claude() {
+    let api_key = if app_type == AppType::ClaudeDesktop {
+        resolve_proxy_auth_key().await.unwrap_or_default()
+    } else if app_type.is_claude() {
         resolve_api_key_for_claude(&app_type).await.unwrap_or_default()
     } else {
         resolve_proxy_auth_key().await.unwrap_or_default()
@@ -238,6 +240,10 @@ pub async fn launch_app(
 
     if app_type.is_codex() {
         sync_codex_route_rule(&body.model).await;
+    }
+
+    if app_type == AppType::ClaudeDesktop {
+        sync_claude_desktop_route_rules(&body.model, model_haiku, model_sonnet, model_opus).await;
     }
 
     let app_config = AppConfig {
@@ -361,4 +367,43 @@ async fn resolve_proxy_auth_key() -> Result<String, String> {
 
     row.and_then(|(v,)| if v.is_empty() { None } else { Some(v) })
         .ok_or_else(|| "proxy_auth_key not configured".to_string())
+}
+
+/// Claude Desktop sends requests with claude model IDs (claude-haiku-4-5, claude-sonnet-4-6, claude-opus-4-7).
+/// These models don't exist in the proxy, so we create interceptor rules to route them to the actual models.
+async fn sync_claude_desktop_route_rules(
+    default_model: &str,
+    model_haiku: Option<&str>,
+    model_sonnet: Option<&str>,
+    model_opus: Option<&str>,
+) {
+    let pool = get_pool().await;
+
+    let rules: Vec<(&str, &str, &str)> = vec![
+        ("auto_claude_haiku_route", "claude-haiku-4-5", model_haiku.unwrap_or(default_model)),
+        ("auto_claude_sonnet_route", "claude-sonnet-4-6", model_sonnet.unwrap_or(default_model)),
+        ("auto_claude_opus_route", "claude-opus-4-7", model_opus.unwrap_or(default_model)),
+    ];
+
+    for (rule_id, claude_model, target_model) in &rules {
+        let condition_json = format!(r#"{{"type":"model_matches","pattern":"{}"}}"#, claude_model);
+        let action_json = format!(r#"{{"type":"replace_model","model":"{}"}}"#, target_model);
+        let rule_name = format!("Claude Desktop {} 路由", claude_model.strip_prefix("claude-").unwrap_or(claude_model));
+
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO interceptor_rules (id, name, phase, rule_type, condition_json, action_json, priority, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(rule_id)
+        .bind(&rule_name)
+        .bind("pre")
+        .bind("model_route")
+        .bind(&condition_json)
+        .bind(&action_json)
+        .bind(100i64)
+        .bind(1i64)
+        .execute(pool)
+        .await;
+
+        tracing::info!("Synced Claude Desktop route rule: {} -> {}", claude_model, target_model);
+    }
 }

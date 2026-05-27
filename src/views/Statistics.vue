@@ -42,6 +42,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useDialog } from 'naive-ui'
+const dialog = useDialog()
 import { api } from '../api'
 import * as echarts from 'echarts'
 import type { UsageTrendPoint } from '../types'
@@ -212,15 +214,22 @@ function handleRangeChange() {
 }
 
 async function handleClearUsage() {
-  if (!window.confirm('确定要清除所有用量统计吗？此操作不可恢复。')) return
-  try {
-    await api<{ deleted: boolean }>('/api/usage', { method: 'DELETE' })
-    stats.value = []
-    if (lineChart) lineChart.setOption(buildLineChartOptions([]))
-    if (pieChart) pieChart.setOption(buildPieChartOptions([]))
-  } catch (error) {
-    console.error('Failed to clear usage:', error)
-  }
+  dialog.warning({
+    title: '清除统计',
+    content: '确定要清除所有用量统计吗？此操作不可恢复。',
+    positiveText: '确定清除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await api<{ deleted: boolean }>('/api/usage', { method: 'DELETE' })
+        stats.value = []
+        if (lineChart) lineChart.setOption(buildLineChartOptions([]))
+        if (pieChart) pieChart.setOption(buildPieChartOptions([]))
+      } catch (error) {
+        console.error('Failed to clear usage:', error)
+      }
+    },
+  })
 }
 
 function handleResize() {

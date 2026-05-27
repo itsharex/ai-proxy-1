@@ -41,8 +41,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { api } from '../api'
-import { NTag, NSpace } from 'naive-ui'
+import { NTag, NSpace, useDialog } from 'naive-ui'
 import type { RequestLog } from '../types'
+
+const dialog = useDialog()
 
 const loading = ref(false)
 const logs = ref<RequestLog[]>([])
@@ -204,14 +206,21 @@ function formatDate(d: Date): string {
 }
 
 async function handleClearLogs() {
-  if (!window.confirm('确定要清除所有日志吗？此操作不可恢复。')) return
-  try {
-    await api<{ deleted: boolean }>('/api/logs', { method: 'DELETE' })
-    logs.value = []
-    total.value = 0
-  } catch (error) {
-    console.error('Failed to clear logs:', error)
-  }
+  dialog.warning({
+    title: '清除日志',
+    content: '确定要清除所有日志吗？此操作不可恢复。',
+    positiveText: '确定清除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await api<{ deleted: boolean }>('/api/logs', { method: 'DELETE' })
+        logs.value = []
+        total.value = 0
+      } catch (error) {
+        console.error('Failed to clear logs:', error)
+      }
+    },
+  })
 }
 
 onMounted(() => {

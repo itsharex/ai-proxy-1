@@ -72,6 +72,31 @@ async fn apply_proxy_config() -> String {
     get_api_config().await
 }
 
+#[tauri::command]
+async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
+    let base_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let app_data_dir = if cfg!(debug_assertions) {
+        base_data_dir.with_file_name("com.aiproxy.app-dev")
+    } else {
+        base_data_dir
+    };
+
+    // Stop proxy first
+    stop_proxy();
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    // Remove all data files
+    if app_data_dir.exists() {
+        std::fs::remove_dir_all(&app_data_dir).map_err(|e| format!("Failed to remove data: {}", e))?;
+    }
+    std::fs::create_dir_all(&app_data_dir).map_err(|e| format!("Failed to recreate data dir: {}", e))?;
+
+    // Restart the app
+    app.restart();
+    #[allow(unreachable_code)]
+    Ok(())
+}
+
 fn start_proxy() -> (String, u16) {
     {
         let ctrl = PROXY_CONTROL.lock().unwrap();
@@ -233,7 +258,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, update::check_for_update])
+        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();

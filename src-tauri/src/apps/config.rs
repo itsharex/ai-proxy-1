@@ -2,7 +2,7 @@ use crate::apps::types::AppType;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-const PROFILE_ID: &str = "00000000-0000-4000-8000-000000157210";
+const PROFILE_ID: &str = "a79ce5f5-a6ac-484e-91ff-c976b9ff98b3";
 
 pub fn codex_config_path() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
@@ -78,25 +78,31 @@ pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) ->
         toml::Value::String(model.to_string()),
     );
 
-    let provider_name = config.get("model_provider").and_then(|v| v.as_str()).map(|s| s.to_string());
-    if let Some(ref name) = provider_name {
-        if let Some(toml::Value::Table(providers)) = config.get_mut("model_providers") {
-            if let Some(toml::Value::Table(provider)) = providers.get_mut(name.as_str()) {
-                provider.insert(
-                    "name".to_string(),
-                    toml::Value::String(model.to_string()),
-                );
-                provider.insert(
-                    "base_url".to_string(),
-                    toml::Value::String(proxy_base.to_string()),
-                );
-            }
+    config.insert(
+        "model_provider".to_string(),
+        toml::Value::String("ai-proxy".to_string()),
+    );
+
+    config.remove("openai_base_url");
+
+    let provider_entry = toml::Value::Table({
+        let mut table = toml::map::Map::new();
+        table.insert("base_url".into(), toml::Value::String(proxy_base.to_string()));
+        table.insert("name".into(), toml::Value::String(model.to_string()));
+        table.insert("requires_openai_auth".into(), toml::Value::Boolean(true));
+        table.insert("wire_api".into(), toml::Value::String("responses".to_string()));
+        table
+    });
+
+    match config.get_mut("model_providers") {
+        Some(toml::Value::Table(providers)) => {
+            providers.insert("ai-proxy".to_string(), provider_entry);
         }
-    } else {
-        config.insert(
-            "openai_base_url".to_string(),
-            toml::Value::String(proxy_base.to_string()),
-        );
+        _ => {
+            let mut providers = toml::map::Map::new();
+            providers.insert("ai-proxy".to_string(), provider_entry);
+            config.insert("model_providers".to_string(), toml::Value::Table(providers));
+        }
     }
 
     let content =
@@ -132,10 +138,18 @@ async fn write_codex_auth(api_key: &str) -> Result<(), String> {
         return Ok(());
     }
 
-    auth.as_object_mut().unwrap().insert(
+    let obj = auth.as_object_mut().unwrap();
+    obj.insert(
+        "auth_mode".to_string(),
+        serde_json::Value::String("apikey".to_string()),
+    );
+    obj.insert(
         "OPENAI_API_KEY".to_string(),
         serde_json::Value::String(api_key.to_string()),
     );
+    obj.remove("tokens");
+    obj.remove("last_refresh");
+    obj.remove("account_id");
 
     let content = serde_json::to_string_pretty(&auth)
         .map_err(|e| format!("Failed to serialize auth.json: {}", e))?;
@@ -217,8 +231,53 @@ pub async fn write_claude_cli_config(
     Ok(path)
 }
 
+fn build_claude_desktop_inference_models(
+    model: &str,
+    model_haiku: Option<&str>,
+    model_sonnet: Option<&str>,
+    model_opus: Option<&str>,
+) -> Vec<serde_json::Value> {
+    let mut models = Vec::new();
+
+    // Haiku tier
+    let mut haiku = serde_json::json!({"name": "claude-haiku-4-5"});
+    if let Some(h) = model_haiku {
+        haiku.as_object_mut().unwrap().insert(
+            "labelOverride".into(),
+            serde_json::Value::String(h.to_string()),
+        );
+    }
+    models.push(haiku);
+
+    // Sonnet tier — default model maps here
+    let mut sonnet = serde_json::json!({"name": "claude-sonnet-4-6"});
+    let sonnet_label = model_sonnet.or(Some(model));
+    if let Some(s) = sonnet_label {
+        sonnet.as_object_mut().unwrap().insert(
+            "labelOverride".into(),
+            serde_json::Value::String(s.to_string()),
+        );
+    }
+    models.push(sonnet);
+
+    // Opus tier
+    let mut opus = serde_json::json!({"name": "claude-opus-4-7", "supports1m": true});
+    if let Some(o) = model_opus {
+        opus.as_object_mut().unwrap().insert(
+            "labelOverride".into(),
+            serde_json::Value::String(o.to_string()),
+        );
+    }
+    models.push(opus);
+
+    models
+}
+
 pub async fn write_claude_desktop_config(
     model: &str,
+    model_haiku: Option<&str>,
+    model_sonnet: Option<&str>,
+    model_opus: Option<&str>,
     proxy_base: &str,
     api_key: &str,
 ) -> Result<PathBuf, String> {
@@ -230,13 +289,14 @@ pub async fn write_claude_desktop_config(
         .map_err(|e| format!("Failed to create Claude-3p directories: {}", e))?;
 
     // 1. Write the gateway profile
+    let inference_models = build_claude_desktop_inference_models(model, model_haiku, model_sonnet, model_opus);
     let profile = serde_json::json!({
         "disableDeploymentModeChooser": true,
         "inferenceGatewayApiKey": api_key,
         "inferenceGatewayAuthScheme": "bearer",
         "inferenceGatewayBaseUrl": proxy_base,
         "inferenceProvider": "gateway",
-        "inferenceModels": [{ "name": model, "supports1m": true }]
+        "inferenceModels": inference_models
     });
     let profile_path = claude_desktop_profile_path();
     let profile_content = serde_json::to_string_pretty(&profile)
@@ -277,7 +337,7 @@ pub async fn write_claude_desktop_config(
                 .unwrap()
                 .push(serde_json::json!({
                     "id": PROFILE_ID,
-                    "name": "AI Proxy"
+                    "name": "AiProxy"
                 }));
         }
     }
@@ -328,7 +388,7 @@ pub async fn write_config(
             write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base).await
         }
         AppType::ClaudeDesktop => {
-            write_claude_desktop_config(model, proxy_base, api_key).await
+            write_claude_desktop_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await
         }
     }
 }
@@ -530,17 +590,20 @@ mod tests {
 
     #[test]
     fn test_claude_desktop_3p_profile_serialization() {
-        let model = "claude-sonnet-4-20250514";
+        let model = "my-custom-model";
         let proxy_base = "http://127.0.0.1:7860";
         let api_key = "sk-test-key-123";
 
+        let inference_models = build_claude_desktop_inference_models(
+            model, Some("haiku-model"), Some("sonnet-model"), Some("opus-model"),
+        );
         let profile = serde_json::json!({
             "disableDeploymentModeChooser": true,
             "inferenceGatewayApiKey": api_key,
             "inferenceGatewayAuthScheme": "bearer",
             "inferenceGatewayBaseUrl": proxy_base,
             "inferenceProvider": "gateway",
-            "inferenceModels": [{ "name": model, "supports1m": true }]
+            "inferenceModels": inference_models
         });
 
         let output = serde_json::to_string_pretty(&profile).expect("Failed to serialize");
@@ -550,13 +613,42 @@ mod tests {
         assert!(output.contains("\"inferenceGatewayAuthScheme\": \"bearer\""));
         assert!(output.contains("\"inferenceGatewayBaseUrl\": \"http://127.0.0.1:7860\""));
         assert!(output.contains("\"inferenceProvider\": \"gateway\""));
-        assert!(output.contains("\"name\": \"claude-sonnet-4-20250514\""));
+        assert!(output.contains("\"name\": \"claude-haiku-4-5\""));
+        assert!(output.contains("\"labelOverride\": \"haiku-model\""));
+        assert!(output.contains("\"name\": \"claude-sonnet-4-6\""));
+        assert!(output.contains("\"labelOverride\": \"sonnet-model\""));
+        assert!(output.contains("\"name\": \"claude-opus-4-7\""));
+        assert!(output.contains("\"labelOverride\": \"opus-model\""));
         assert!(output.contains("\"supports1m\": true"));
     }
 
     #[test]
+    fn test_claude_desktop_inference_models_default_fallback() {
+        let models = build_claude_desktop_inference_models(
+            "gpt-4o", None, None, None,
+        );
+        assert_eq!(models.len(), 3);
+
+        // Haiku — no labelOverride
+        let haiku = &models[0];
+        assert_eq!(haiku["name"].as_str(), Some("claude-haiku-4-5"));
+        assert!(haiku.get("labelOverride").is_none());
+
+        // Sonnet — default model used as label
+        let sonnet = &models[1];
+        assert_eq!(sonnet["name"].as_str(), Some("claude-sonnet-4-6"));
+        assert_eq!(sonnet["labelOverride"].as_str(), Some("gpt-4o"));
+
+        // Opus — no labelOverride, has supports1m
+        let opus = &models[2];
+        assert_eq!(opus["name"].as_str(), Some("claude-opus-4-7"));
+        assert!(opus.get("labelOverride").is_none());
+        assert_eq!(opus["supports1m"].as_bool(), Some(true));
+    }
+
+    #[test]
     fn test_claude_desktop_meta_merges_profile_id() {
-        let profile_id = "00000000-0000-4000-8000-000000157210";
+        let profile_id = "A79CE5F5-A6AC-484E-91FF-C976B9FF98B3";
         let mut meta = serde_json::json!({
             "entries": [{ "id": "other-profile", "name": "Other" }]
         });
@@ -583,23 +675,23 @@ mod tests {
                     .unwrap()
                     .push(serde_json::json!({
                         "id": profile_id,
-                        "name": "AI Proxy"
+                        "name": "AiProxy"
                     }));
             }
         }
 
         let output = serde_json::to_string_pretty(&meta).expect("Failed to serialize");
 
-        assert!(output.contains("\"appliedId\": \"00000000-0000-4000-8000-000000157210\""));
+        assert!(output.contains("\"appliedId\": \"A79CE5F5-A6AC-484E-91FF-C976B9FF98B3\""));
         assert!(output.contains("\"id\": \"other-profile\""));
-        assert!(output.contains("\"name\": \"AI Proxy\""));
+        assert!(output.contains("\"name\": \"AiProxy\""));
     }
 
     #[test]
     fn test_claude_desktop_meta_no_duplicate_profile() {
-        let profile_id = "00000000-0000-4000-8000-000000157210";
+        let profile_id = "A79CE5F5-A6AC-484E-91FF-C976B9FF98B3";
         let mut meta = serde_json::json!({
-            "entries": [{ "id": profile_id, "name": "AI Proxy" }]
+            "entries": [{ "id": profile_id, "name": "AiProxy" }]
         });
 
         let meta_obj = meta.as_object_mut().unwrap();
@@ -624,7 +716,7 @@ mod tests {
                     .unwrap()
                     .push(serde_json::json!({
                         "id": profile_id,
-                        "name": "AI Proxy"
+                        "name": "AiProxy"
                     }));
             }
         }

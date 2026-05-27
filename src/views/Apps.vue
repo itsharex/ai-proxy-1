@@ -274,7 +274,7 @@ async function fetchApps() {
   loading.value = true
   try {
     apps.value = (await api<AppConfig[]>('/api/apps'))
-      .filter(a => a.app_type !== 'claude_desktop')
+
   } catch (err) {
     console.error('Failed to load apps:', err)
   } finally {

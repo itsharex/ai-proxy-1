@@ -77,6 +77,18 @@
         </n-form-item>
       </n-form>
     </n-card>
+
+    <n-card v-if="isTauri" title="危险操作" style="margin-top: 16px">
+      <template #header-extra>
+        <n-tag type="error" size="small">谨慎操作</n-tag>
+      </template>
+      <n-space vertical>
+        <n-text>清除所有数据将删除所有供应商配置、API Key、请求日志等，应用将自动重启。</n-text>
+        <n-button type="error" @click="handleResetAll">
+          清除所有数据
+        </n-button>
+      </n-space>
+    </n-card>
     <UpdateNotification ref="updateNotification" />
   </n-space>
 </template>
@@ -216,6 +228,32 @@ async function handleCheckUpdate() {
     message.error(`检查更新失败: ${error}`)
   } finally {
     checkingUpdate.value = false
+  }
+}
+
+
+async function handleResetAll() {
+  const dialog = window.confirm(
+    `⚠️ 确定要清除所有数据吗？
+
+此操作将删除：
+- 所有供应商配置和 API Key
+- 所有请求日志
+- 所有应用配置
+
+应用将自动重启，此操作不可恢复！`
+  )
+  if (!dialog) return
+
+  const confirm2 = window.confirm(
+    '⚠️ 最后确认：所有数据将被永久删除，确定继续吗？'
+  )
+  if (!confirm2) return
+
+  try {
+    await invoke('reset_all_data')
+  } catch (error) {
+    message.error(`重置失败: ${error}`)
   }
 }
 

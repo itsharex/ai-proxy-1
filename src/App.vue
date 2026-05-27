@@ -1,5 +1,6 @@
 <template>
   <n-config-provider :locale="zhCN" :date-locale="dateZhCN">
+    <n-dialog-provider>
     <n-message-provider>
     <n-layout style="height: 100vh" has-sider>
       <n-layout-sider
@@ -34,6 +35,7 @@
     </n-layout>
     <UpdateNotification ref="updateNotification" />
     </n-message-provider>
+    </n-dialog-provider>
   </n-config-provider>
 </template>
 
