@@ -110,7 +110,6 @@ const formatOptions = [
   { label: 'OpenAI Completions', value: 'completions' },
   { label: 'OpenAI Responses', value: 'responses' },
   { label: 'Anthropic', value: 'anthropic' },
-  { label: 'Google Gemini', value: 'gemini' },
 ]
 
 const formatColorMap: Record<string, string> = {

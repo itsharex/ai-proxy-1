@@ -185,12 +185,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useMessage } from 'naive-ui'
+import { useRouter } from 'vue-router'
 import { SettingsOutline } from '@vicons/ionicons5'
 import { open } from '@tauri-apps/plugin-dialog'
 import { api } from '../api'
 import type { AppConfig, AppType, Provider, ProviderModel } from '../types'
 
 const message = useMessage()
+const router = useRouter()
 const loading = ref(false)
 const apps = ref<AppConfig[]>([])
 const allModels = ref<ProviderModel[]>([])
@@ -289,7 +291,18 @@ async function fetchModels() {
   }
 }
 
-function openLaunchModal(app: AppConfig) {
+async function openLaunchModal(app: AppConfig) {
+  try {
+    const s = await api<{ proxy_auth_key?: string }>('/api/settings')
+    if (!s.proxy_auth_key) {
+      message.warning('请先在设置中配置代理 API Key')
+      router.push('/settings')
+      return
+    }
+  } catch {
+    // ignore
+  }
+
   launchForm.value = {
     appType: app.app_type,
     appName: displayName(app.app_type),

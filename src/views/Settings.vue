@@ -43,10 +43,7 @@
 
         <n-divider />
 
-        <n-form-item label="代理入口认证">
-          <n-switch v-model:value="settings.proxyAuthEnabled" />
-        </n-form-item>
-        <n-form-item v-if="settings.proxyAuthEnabled" label="代理 API Key">
+        <n-form-item label="代理 API Key">
           <n-input
             v-model:value="settings.proxyAuthKey"
             type="password"
@@ -54,14 +51,6 @@
             placeholder="设置 Agent 访问代理时使用的 API Key"
           />
         </n-form-item>
-        <n-alert
-          v-if="settings.proxyAuthEnabled && !settings.proxyAuthKey"
-          title="请设置 API Key"
-          type="warning"
-          style="margin-bottom: 16px"
-        >
-          启用认证后，Agent 调用代理接口需在请求头携带 <n-text code>Authorization: Bearer &lt;your-key&gt;</n-text>。
-        </n-alert>
 
         <n-form-item>
           <n-space>
@@ -110,7 +99,6 @@ interface AppSettings {
   connectTimeout: number
   logRetentionDays: number
   recordRequestBody: boolean
-  proxyAuthEnabled: boolean
   proxyAuthKey: string
 }
 
@@ -120,7 +108,6 @@ const settings = ref<AppSettings>({
   connectTimeout: 30,
   logRetentionDays: 30,
   recordRequestBody: false,
-  proxyAuthEnabled: false,
   proxyAuthKey: '',
 })
 
@@ -150,7 +137,6 @@ async function loadSettings() {
       connectTimeout: parseInt(data.connect_timeout) || 30,
       logRetentionDays: parseInt(data.log_retention_days) || 30,
       recordRequestBody: data.record_request_body === 'true',
-      proxyAuthEnabled: data.proxy_auth_enabled === 'true',
       proxyAuthKey: data.proxy_auth_key,
     }
     savedNetworkConfig.value = {
@@ -164,8 +150,8 @@ async function loadSettings() {
 async function handleSave() {
   const previousPort = savedNetworkConfig.value.port
 
-  if (settings.value.proxyAuthEnabled && !settings.value.proxyAuthKey) {
-    message.warning('启用认证后必须设置 API Key')
+  if (!settings.value.proxyAuthKey) {
+    message.warning('请设置代理 API Key')
     return
   }
   try {
@@ -177,7 +163,7 @@ async function handleSave() {
         connect_timeout: String(settings.value.connectTimeout),
         log_retention_days: String(settings.value.logRetentionDays),
         record_request_body: String(settings.value.recordRequestBody),
-        proxy_auth_enabled: String(settings.value.proxyAuthEnabled),
+        proxy_auth_enabled: 'true',
         proxy_auth_key: settings.value.proxyAuthKey,
       }),
     })
