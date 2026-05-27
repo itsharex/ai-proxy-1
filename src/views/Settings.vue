@@ -2,19 +2,6 @@
   <n-space vertical size="large">
     <n-card title="全局设置">
       <n-form label-placement="left" label-width="140" style="max-width: 520px">
-        <n-form-item label="HTTP 主机">
-          <n-input v-model:value="settings.host" placeholder="127.0.0.1" />
-        </n-form-item>
-
-        <n-alert
-          v-if="settings.host === '0.0.0.0'"
-          title="安全警告"
-          type="warning"
-          style="margin-bottom: 16px"
-        >
-          绑定到 0.0.0.0 将使代理对外部网络开放，请确保在受信任的网络环境中使用。
-        </n-alert>
-
         <n-form-item label="HTTP 端口">
           <n-input-number
             v-model:value="settings.port"
@@ -118,7 +105,6 @@ import UpdateNotification from '../components/UpdateNotification.vue'
 const message = useMessage()
 
 interface AppSettings {
-  host: string
   port: number
   requestTimeout: number
   connectTimeout: number
@@ -129,7 +115,6 @@ interface AppSettings {
 }
 
 const settings = ref<AppSettings>({
-  host: '127.0.0.1',
   port: 7860,
   requestTimeout: 1200,
   connectTimeout: 30,
@@ -140,7 +125,6 @@ const settings = ref<AppSettings>({
 })
 
 const savedNetworkConfig = ref({
-  host: settings.value.host,
   port: settings.value.port,
 })
 
@@ -152,7 +136,6 @@ const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(n
 async function loadSettings() {
   try {
     const data = await api<{
-      http_host: string
       http_port: string
       request_timeout: string
       connect_timeout: string
@@ -162,7 +145,6 @@ async function loadSettings() {
       proxy_auth_key: string
     }>('/api/settings')
     settings.value = {
-      host: data.http_host,
       port: parseInt(data.http_port) || 7860,
       requestTimeout: parseInt(data.request_timeout) || 1200,
       connectTimeout: parseInt(data.connect_timeout) || 30,
@@ -172,7 +154,6 @@ async function loadSettings() {
       proxyAuthKey: data.proxy_auth_key,
     }
     savedNetworkConfig.value = {
-      host: settings.value.host,
       port: settings.value.port,
     }
   } catch (error) {
@@ -181,7 +162,6 @@ async function loadSettings() {
 }
 
 async function handleSave() {
-  const previousHost = savedNetworkConfig.value.host
   const previousPort = savedNetworkConfig.value.port
 
   if (settings.value.proxyAuthEnabled && !settings.value.proxyAuthKey) {
@@ -192,7 +172,6 @@ async function handleSave() {
     await api('/api/settings', {
       method: 'PUT',
       body: JSON.stringify({
-        http_host: settings.value.host,
         http_port: String(settings.value.port),
         request_timeout: String(settings.value.requestTimeout),
         connect_timeout: String(settings.value.connectTimeout),
@@ -203,16 +182,14 @@ async function handleSave() {
       }),
     })
 
-    const hostChanged = settings.value.host !== previousHost
     const portChanged = settings.value.port !== previousPort
 
-    if (isTauri && (hostChanged || portChanged)) {
+    if (isTauri && portChanged) {
       await invoke<string>('apply_proxy_config')
       await refreshApiConfig()
     }
 
     savedNetworkConfig.value = {
-      host: settings.value.host,
       port: settings.value.port,
     }
     message.success('设置已保存')

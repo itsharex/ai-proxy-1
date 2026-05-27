@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 const DEFAULT_PROXY_PORT: u16 = 7860;
-const DEFAULT_PROXY_HOST: &str = "127.0.0.1";
+const DEFAULT_PROXY_HOST: &str = "0.0.0.0";
 
 static APP_RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
 
@@ -42,16 +42,11 @@ static PROXY_CONTROL: Lazy<Mutex<ProxyControl>> = Lazy::new(|| {
 
 async fn get_proxy_config() -> (String, u16) {
     let pool = db::get_pool().await;
-    let host: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_host'")
-        .fetch_one(pool)
-        .await
-        .unwrap_or_else(|_| DEFAULT_PROXY_HOST.to_string());
-    let pool = db::get_pool().await;
     let port_str: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_port'")
         .fetch_one(pool)
         .await
         .unwrap_or_else(|_| DEFAULT_PROXY_PORT.to_string());
-    (host, port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
+    (DEFAULT_PROXY_HOST.to_string(), port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
 }
 
 fn to_connect_host(host: &str) -> String {

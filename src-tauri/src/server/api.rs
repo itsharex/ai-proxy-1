@@ -491,7 +491,6 @@ async fn delete_rule(
 
 #[derive(Serialize)]
 struct Settings {
-    http_host: String,
     http_port: String,
     log_retention_days: String,
     record_request_body: String,
@@ -504,12 +503,11 @@ struct Settings {
 async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_host', 'http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout')"
+        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout')"
     ).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let map: HashMap<String, String> = rows.into_iter().collect();
     Ok(ok(Settings {
-        http_host: map.get("http_host").cloned().unwrap_or_else(|| "127.0.0.1".into()),
         http_port: map.get("http_port").cloned().unwrap_or_else(|| "7860".into()),
         log_retention_days: map.get("log_retention_days").cloned().unwrap_or_else(|| "30".into()),
         record_request_body: map.get("record_request_body").cloned().unwrap_or_else(|| "false".into()),
@@ -522,7 +520,6 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
 
 #[derive(Deserialize)]
 struct UpdateSettingsBody {
-    http_host: Option<String>,
     http_port: Option<String>,
     log_retention_days: Option<String>,
     record_request_body: Option<String>,
@@ -537,7 +534,6 @@ async fn update_settings(
 ) -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
     let pool = get_pool().await;
     let updates = [
-        ("http_host", body.http_host),
         ("http_port", body.http_port),
         ("log_retention_days", body.log_retention_days),
         ("record_request_body", body.record_request_body),

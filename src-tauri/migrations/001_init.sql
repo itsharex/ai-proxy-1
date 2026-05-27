@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 INSERT OR IGNORE INTO settings (key, value) VALUES
-    ('http_host', '127.0.0.1'),
+    ('http_host', '0.0.0.0'),
     ('http_port', '7860'),
     ('log_retention_days', '30'),
     ('record_request_body', 'false'),

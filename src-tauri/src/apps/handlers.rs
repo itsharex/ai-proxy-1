@@ -139,17 +139,15 @@ pub async fn launch_app(
 
     // Get proxy base URL from settings
     let proxy_settings: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_host', 'http_port')",
+        "SELECT key, value FROM settings WHERE key = 'http_port'",
     )
     .fetch_all(pool)
     .await
     .map_err(|e| err_json(e.to_string()))?;
 
     let settings_map: HashMap<String, String> = proxy_settings.into_iter().collect();
-    let host = settings_map.get("http_host").cloned().unwrap_or_else(|| "127.0.0.1".into());
-    let host = if host == "0.0.0.0" { "127.0.0.1".to_string() } else { host };
     let port = settings_map.get("http_port").cloned().unwrap_or_else(|| "7860".into());
-    let proxy_base = format!("http://{}:{}", host, port);
+    let proxy_base = format!("http://127.0.0.1:{}", port);
 
     let proxy_url = format!("{}{}", proxy_base, app_type.proxy_url_suffix());
     let now = chrono::Utc::now().to_rfc3339();

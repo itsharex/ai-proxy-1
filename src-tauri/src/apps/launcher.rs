@@ -54,6 +54,11 @@ fn desktop_candidates(name: &str) -> Vec<PathBuf> {
     {
         let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
         vec![
+            // Microsoft Store / WindowsApps (winget)
+            PathBuf::from(format!(
+                "{}\\Microsoft\\WindowsApps\\{}.exe",
+                local_app_data, name
+            )),
             PathBuf::from(format!("C:\\Program Files\\{}\\{}.exe", name, name)),
             PathBuf::from(format!(
                 "C:\\Program Files (x86)\\{}\\{}.exe",

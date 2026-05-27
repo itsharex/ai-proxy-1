@@ -56,21 +56,15 @@
         <n-divider>模型列表</n-divider>
 
         <n-space vertical size="small">
-          <n-space
+          <div
             v-for="(_, index) in form.models"
             :key="index"
-            align="center"
-            size="small"
+            style="display: flex; align-items: center; gap: 8px"
           >
             <n-input
               v-model:value="form.models[index].model_name"
               placeholder="模型名称"
-              style="width: 200px"
-            />
-            <n-input
-              v-model:value="form.models[index].target_model"
-              placeholder="上游模型 (可选)"
-              style="width: 200px"
+              style="flex: 1"
             />
             <n-button
               quaternary
@@ -80,7 +74,7 @@
             >
               删除
             </n-button>
-          </n-space>
+          </div>
           <n-button dashed size="small" @click="addModel">
             + 添加模型
           </n-button>
@@ -109,7 +103,7 @@ const form = ref({
   base_url: '',
   format: 'completions' as string,
   api_key: '',
-  models: [] as Array<{ model_name: string; target_model: string }>,
+  models: [] as Array<{ model_name: string }>,
 })
 
 const formatOptions = [
@@ -171,7 +165,7 @@ const columns = [
 function addModel() {
   form.value.models = [
     ...form.value.models,
-    { model_name: '', target_model: '' },
+    { model_name: '' },
   ]
 }
 
@@ -202,7 +196,6 @@ function openEditModal(row: Provider) {
     api_key: '',
     models: row.models.map((m) => ({
       model_name: m.model_name,
-      target_model: m.target_model || '',
     })),
   }
   showModal.value = true
@@ -227,7 +220,7 @@ async function handleSubmit() {
         format: form.value.format,
         models: form.value.models.map((m) => ({
           model_name: m.model_name,
-          target_model: m.target_model || null,
+          target_model: null,
         })),
       }
       if (form.value.api_key) {
@@ -248,7 +241,7 @@ async function handleSubmit() {
           api_key: form.value.api_key,
           models: form.value.models.map((m) => ({
             model_name: m.model_name,
-            target_model: m.target_model || null,
+            target_model: null,
           })),
         }),
       })
