@@ -96,18 +96,15 @@ const columns = [
   { title: '模型', key: 'model', width: 140 },
   { title: '供应商', key: 'provider_name', width: 100 },
   {
-    title: '客户端格式',
-    key: 'client_format',
-    width: 100,
+    title: '请求格式',
+    key: 'format',
+    width: 170,
     render: (row: RequestLog) =>
-      h(NTag, { size: 'small', type: 'info' }, () => row.client_format),
-  },
-  {
-    title: '供应商格式',
-    key: 'provider_format',
-    width: 100,
-    render: (row: RequestLog) =>
-      h(NTag, { size: 'small', type: 'warning' }, () => row.provider_format),
+      h(NSpace, { size: 4, align: 'center' }, () => [
+        h(NTag, { size: 'small', type: 'info' }, () => row.client_format),
+        h('span', { style: 'color: #999; font-size: 12px' }, () => '→'),
+        h(NTag, { size: 'small', type: 'warning' }, () => row.provider_format),
+      ]),
   },
   {
     title: '状态码',

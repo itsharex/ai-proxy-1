@@ -62,7 +62,8 @@ export async function initApi(force = false): Promise<void> {
   }
 
   // Try relative URL first (works through Vite proxy in dev mode)
-  for (let i = 0; i < 10; i++) {
+  // Use exponential backoff: 1s, 2s, 4s, 8s... to avoid flooding logs during Rust compilation
+  for (let i = 0; i < 20; i++) {
     if (await tryFetchHealth('/health')) {
       const config = await loadTauriConfig()
       if (config) {
@@ -80,7 +81,9 @@ export async function initApi(force = false): Promise<void> {
       return
     }
 
-    await new Promise(r => setTimeout(r, 500))
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s... max 30s
+    const delay = Math.min(1000 * Math.pow(2, i), 30000)
+    await new Promise(r => setTimeout(r, delay))
   }
 
   throw new Error('Proxy server not reachable')

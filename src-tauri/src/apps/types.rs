@@ -110,6 +110,7 @@ pub struct DbAppConfig {
     pub model: String,
     pub proxy_url: String,
     pub launched_at: String,
+    #[allow(dead_code)]
     pub config_path: Option<String>,
     pub install_path: Option<String>,
     pub status: String,

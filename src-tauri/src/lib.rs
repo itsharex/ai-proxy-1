@@ -153,8 +153,19 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
-            let app_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+            let base_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+            let app_data_dir = if cfg!(debug_assertions) {
+                base_data_dir.with_file_name("com.aiproxy.app-dev")
+            } else {
+                base_data_dir
+            };
             std::fs::create_dir_all(&app_data_dir).expect("failed to create app data dir");
+
+            if cfg!(debug_assertions) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title("AI Proxy [DEV]");
+                }
+            }
 
             let db_path = app_data_dir.join("ai-proxy.db");
             let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");

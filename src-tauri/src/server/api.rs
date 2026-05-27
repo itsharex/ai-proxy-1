@@ -21,6 +21,7 @@ use crate::converter::{FormatGenerator, FormatParser};
 use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
 use crate::apps::handlers;
+use crate::logging::store::log_request;
 
 // --- Unified response types ---
 
@@ -586,6 +587,8 @@ fn get_parser(format: &ClientFormat) -> Box<dyn FormatParser> {
     }
 }
 
+
+
 async fn test_model(
     axum::Json(body): axum::Json<TestModelBody>,
 ) -> Result<Json<ApiResponse<TestModelResult>>, Json<ApiError>> {
@@ -710,6 +713,18 @@ async fn test_model(
         Ok(r) => r,
         Err(e) => {
             let duration = start.elapsed().as_millis() as i64;
+            let _ = log_request(
+                &format!("test-{}", uuid::Uuid::new_v4()),
+                "test",
+                &route.provider_name,
+                &format!("{:?}", route.target_format).to_lowercase(),
+                &body.model_name,
+                false,
+                0,
+                duration,
+                Some(&e.to_string()),
+                0, 0, 0, None,
+            ).await;
             return Ok(ok(TestModelResult {
                 success: false,
                 message: "请求上游供应商失败".into(),
@@ -737,12 +752,25 @@ async fn test_model(
     let duration = start.elapsed().as_millis() as i64;
 
     if !status.is_success() {
+        let err_msg: String = resp_body.chars().take(500).collect();
+        let _ = log_request(
+            &format!("test-{}", uuid::Uuid::new_v4()),
+            "test",
+            &route.provider_name,
+            &format!("{:?}", route.target_format).to_lowercase(),
+            &body.model_name,
+            false,
+            status.as_u16(),
+            duration,
+            Some(&err_msg),
+            0, 0, 0, None,
+        ).await;
         return Ok(ok(TestModelResult {
             success: false,
             message: format!("上游返回错误状态: {}", status),
             response_text: None,
             duration_ms: Some(duration),
-            error: Some(resp_body.chars().take(500).collect()),
+            error: Some(err_msg),
         }));
     }
 
@@ -774,6 +802,19 @@ async fn test_model(
             Some(resp_body.chars().take(200).collect())
         }
     };
+
+    let _ = log_request(
+        &format!("test-{}", uuid::Uuid::new_v4()),
+        "test",
+        &route.provider_name,
+        &format!("{:?}", route.target_format).to_lowercase(),
+        &body.model_name,
+        false,
+        status.as_u16(),
+        duration,
+        None,
+        0, 0, 0, None,
+    ).await;
 
     Ok(ok(TestModelResult {
         success: true,

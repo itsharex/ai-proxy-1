@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
-
 const GITHUB_REPO: &str = "mrhuangyong/ai-proxy";
 const GITHUB_API_URL: &str = "https://api.github.com/repos";
 const GITHUB_TOKEN: &str = concat!("github_pat_11AE2FARA0", "qKQbpKG5fFza_w8oj5Hqez40KG91dychxpZEs7myhKDntTMKECk1IMTtURWYME3ObPPaWZ9w");
@@ -14,7 +12,7 @@ pub struct UpdateInfo {
 }
 
 #[derive(Debug, Deserialize)]
-struct GithubRelease {
+pub struct GithubRelease {
     tag_name: String,
     body: Option<String>,
     html_url: String,

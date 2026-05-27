@@ -2,6 +2,18 @@ use crate::apps::types::AppType;
 use std::path::PathBuf;
 use tokio::process::Command;
 
+/// Create a Command with CREATE_NO_WINDOW flag on Windows to prevent console window flash.
+fn quiet_command(program: &str) -> Command {
+    let cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 pub async fn detect_path(app_type: &AppType) -> Option<String> {
     match app_type {
         AppType::CodexCli => detect_cli("codex").await,
@@ -13,7 +25,7 @@ pub async fn detect_path(app_type: &AppType) -> Option<String> {
 
 async fn detect_cli(name: &str) -> Option<String> {
     let cmd_name = if cfg!(windows) { "where" } else { "which" };
-    let output = Command::new(cmd_name).arg(name).output().await.ok()?;
+    let output = quiet_command(cmd_name).arg(name).output().await.ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !path.is_empty() {
@@ -97,6 +109,7 @@ fn desktop_candidates(name: &str) -> Vec<PathBuf> {
     }
 }
 
+#[allow(dead_code)]
 pub fn resolve_install_path(app_type: &AppType, custom_path: Option<&str>) -> Option<String> {
     let _ = app_type;
     custom_path
@@ -192,7 +205,7 @@ async fn kill_existing_desktop(install_path: &str) {
 
     #[cfg(target_os = "macos")]
     {
-        let _ = Command::new("pkill")
+        let _ = quiet_command("pkill")
             .args(["-x", &name])
             .output()
             .await;
@@ -200,7 +213,7 @@ async fn kill_existing_desktop(install_path: &str) {
 
     #[cfg(target_os = "linux")]
     {
-        let _ = Command::new("pkill")
+        let _ = quiet_command("pkill")
             .args(["-x", &name])
             .output()
             .await;
@@ -209,7 +222,7 @@ async fn kill_existing_desktop(install_path: &str) {
     #[cfg(target_os = "windows")]
     {
         let exe_name = format!("{}.exe", name);
-        let _ = Command::new("taskkill")
+        let _ = quiet_command("taskkill")
             .args(["/F", "/IM", &exe_name])
             .output()
             .await;
@@ -245,7 +258,7 @@ async fn launch_desktop(install_path: &str) -> Result<(), String> {
     {
         tracing::info!("Launching Windows desktop app at {}", install_path);
         kill_existing_desktop(install_path).await;
-        Command::new("cmd")
+        quiet_command("cmd")
             .args(["/C", "start", "", install_path])
             .spawn()
             .map_err(|e| format!("Failed to launch {}: {}", install_path, e))?;
