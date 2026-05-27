@@ -65,7 +65,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || '' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version != '' && format('v{0}', inputs.version) || github.ref }}
 
       - name: Verify version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
