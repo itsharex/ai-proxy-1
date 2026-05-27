@@ -32,10 +32,10 @@
     >
       <n-form :model="form" label-placement="left" label-width="80">
         <n-form-item label="名称" required>
-          <n-input v-model:value="form.name" placeholder="例如: OpenAI" />
+          <n-input v-model:value="form.name" placeholder="例如: OpenAI" :input-props="{ autocapitalize: 'off' }" />
         </n-form-item>
         <n-form-item label="Base URL" required>
-          <n-input v-model:value="form.base_url" placeholder="例如: https://api.openai.com" />
+          <n-input v-model:value="form.base_url" placeholder="例如: https://api.openai.com" :input-props="{ autocapitalize: 'off' }" />
         </n-form-item>
         <n-form-item label="格式">
           <n-select
