@@ -515,7 +515,7 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
         record_request_body: map.get("record_request_body").cloned().unwrap_or_else(|| "false".into()),
         proxy_auth_enabled: map.get("proxy_auth_enabled").cloned().unwrap_or_else(|| "false".into()),
         proxy_auth_key: map.get("proxy_auth_key").cloned().unwrap_or_default(),
-        request_timeout: map.get("request_timeout").cloned().unwrap_or_else(|| "300".into()),
+        request_timeout: map.get("request_timeout").cloned().unwrap_or_else(|| "1200".into()),
         connect_timeout: map.get("connect_timeout").cloned().unwrap_or_else(|| "30".into()),
     }))
 }

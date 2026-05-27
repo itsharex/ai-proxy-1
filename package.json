@@ -1,5 +1,5 @@
 {
-  "name": "ai-proxy-tmp",
+  "name": "ai-proxy",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "release": "bash scripts/bump-version.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

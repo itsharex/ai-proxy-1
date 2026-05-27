@@ -131,7 +131,7 @@ interface AppSettings {
 const settings = ref<AppSettings>({
   host: '127.0.0.1',
   port: 7860,
-  requestTimeout: 300,
+  requestTimeout: 1200,
   connectTimeout: 30,
   logRetentionDays: 30,
   recordRequestBody: false,
@@ -164,7 +164,7 @@ async function loadSettings() {
     settings.value = {
       host: data.http_host,
       port: parseInt(data.http_port) || 7860,
-      requestTimeout: parseInt(data.request_timeout) || 300,
+      requestTimeout: parseInt(data.request_timeout) || 1200,
       connectTimeout: parseInt(data.connect_timeout) || 30,
       logRetentionDays: parseInt(data.log_retention_days) || 30,
       recordRequestBody: data.record_request_body === 'true',

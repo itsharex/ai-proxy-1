@@ -84,7 +84,7 @@ pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) ->
             if let Some(toml::Value::Table(provider)) = providers.get_mut(name.as_str()) {
                 provider.insert(
                     "name".to_string(),
-                    toml::Value::String("AI Proxy".to_string()),
+                    toml::Value::String(model.to_string()),
                 );
                 provider.insert(
                     "base_url".to_string(),

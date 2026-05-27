@@ -268,7 +268,7 @@ async fn handle_proxy(
             "SELECT key, value FROM settings WHERE key IN ('request_timeout', 'connect_timeout')"
         ).fetch_all(pool).await.unwrap_or_default();
         let map: HashMap<String, String> = rows.into_iter().collect();
-        let rt = map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(300);
+        let rt = map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(1200);
         let ct = map.get("connect_timeout").and_then(|v| v.parse().ok()).unwrap_or(30);
         (rt, ct)
     };
