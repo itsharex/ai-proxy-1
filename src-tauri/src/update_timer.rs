@@ -19,6 +19,11 @@ fn should_notify(version: &str) -> bool {
 }
 
 pub fn start_update_timer(app: tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        tracing::info!("Development mode, skipping update timer");
+        return;
+    }
+
     let handle = {
         let guard = crate::APP_RUNTIME.lock().unwrap();
         guard.as_ref().expect("runtime not initialized").handle().clone()

@@ -484,7 +484,7 @@ async fn handle_proxy(
             let mut total_cached = 0u32;
             let mut reader = stream;
             let mut ttft_ms: Option<i64> = None;
-            let mut buffer = String::new();
+            let mut buffer: Vec<u8> = Vec::new();
             let mut started = false;
             let mut finished = false;
 
@@ -508,21 +508,42 @@ async fn handle_proxy(
             let mut resp_accumulated_reasoning = String::new(); // pure reasoning without tags, for cache
             let is_responses = matches!(client_format, ClientFormat::Responses);
 
-            while let Some(chunk_result) = reader.next().await {
-                let chunk = match chunk_result {
-                    Ok(c) => c,
-                    Err(e) => {
-                        error!("Stream error: {}", e);
-                        stream_state_ref.interrupted.store(true, Ordering::SeqCst);
-                        break;
+            let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
+            heartbeat_interval.tick().await; // skip first immediate tick
+
+            loop {
+                let chunk = tokio::select! {
+                    chunk_result = reader.next() => {
+                        match chunk_result {
+                            Some(Ok(c)) => c,
+                            Some(Err(e)) => {
+                                error!("Stream error: {}", e);
+                                stream_state_ref.interrupted.store(true, Ordering::SeqCst);
+                                break;
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = heartbeat_interval.tick() => {
+                        // SSE heartbeat: keep client and intermediaries alive during upstream silence
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(": ping\n\n"));
+                        continue;
                     }
                 };
 
-                buffer.push_str(&String::from_utf8_lossy(&chunk));
+                buffer.extend_from_slice(&chunk);
 
-                while let Some(newline_pos) = buffer.find('\n') {
-                    let line = buffer[..newline_pos].to_string();
-                    buffer = buffer[newline_pos + 1..].to_string();
+                while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let line_bytes: Vec<u8> = buffer[..newline_pos].to_vec();
+                    buffer = buffer[newline_pos + 1..].to_vec();
+
+                    let line = match std::str::from_utf8(&line_bytes) {
+                        Ok(s) => s.to_string(),
+                        Err(_) => {
+                            // Skip lines with invalid UTF-8 (shouldn't happen in well-formed SSE)
+                            continue;
+                        }
+                    };
 
                     let trimmed = line.trim();
                     if trimmed.is_empty() {

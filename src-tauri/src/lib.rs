@@ -75,7 +75,7 @@ async fn get_api_config() -> String {
 #[tauri::command]
 async fn apply_proxy_config() -> String {
     stop_proxy();
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     start_proxy();
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     get_api_config().await

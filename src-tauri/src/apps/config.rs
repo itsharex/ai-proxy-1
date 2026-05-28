@@ -171,6 +171,7 @@ pub async fn write_claude_cli_config(
     model_sonnet: Option<&str>,
     model_opus: Option<&str>,
     proxy_base: &str,
+    api_key: &str,
 ) -> Result<PathBuf, String> {
     let path = claude_cli_config_path();
     let mut config: serde_json::Value = if path.exists() {
@@ -193,6 +194,12 @@ pub async fn write_claude_cli_config(
             "ANTHROPIC_BASE_URL".to_string(),
             serde_json::Value::String(proxy_base.to_string()),
         );
+        if !api_key.is_empty() {
+            env_obj.insert(
+                "ANTHROPIC_AUTH_TOKEN".to_string(),
+                serde_json::Value::String(api_key.to_string()),
+            );
+        }
         env_obj.insert(
             "ANTHROPIC_MODEL".to_string(),
             serde_json::Value::String(model.to_string()),
@@ -385,7 +392,7 @@ pub async fn write_config(
             write_codex_config(model, proxy_base, api_key).await
         }
         AppType::ClaudeCli => {
-            write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base).await
+            write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await
         }
         AppType::ClaudeDesktop => {
             write_claude_desktop_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await

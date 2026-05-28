@@ -196,6 +196,7 @@ const router = useRouter()
 const loading = ref(false)
 const apps = ref<AppConfig[]>([])
 const allModels = ref<ProviderModel[]>([])
+const allProviders = ref<Provider[]>([])
 
 const showLaunchModal = ref(false)
 const launchLoading = ref(false)
@@ -285,6 +286,7 @@ async function fetchApps() {
 async function fetchModels() {
   try {
     const providers = await api<Provider[]>('/api/providers')
+    allProviders.value = providers
     allModels.value = providers.flatMap((p) => p.models)
   } catch (err) {
     console.error('Failed to load models:', err)
@@ -301,6 +303,20 @@ async function openLaunchModal(app: AppConfig) {
     }
   } catch {
     // ignore
+  }
+
+  // 检查对应 provider 是否有 API key
+  await fetchModels()
+  const requiredProvider = app.app_type === 'claude_cli' || app.app_type === 'claude_desktop'
+    ? 'anthropic'
+    : null
+  if (requiredProvider) {
+    const provider = allProviders.value.find(p => p.format === requiredProvider)
+    if (!provider || provider.api_keys.length === 0) {
+      message.warning('请先在设置中配置 Anthropic API Key')
+      router.push('/settings')
+      return
+    }
   }
 
   launchForm.value = {
