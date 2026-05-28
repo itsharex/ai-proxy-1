@@ -1524,54 +1524,39 @@ fn inject_cached_reasoning_into_assistant_messages(
     previous_response_id: Option<&str>,
     cache: &HashMap<String, String>,
 ) {
-    let cached_by_id = previous_response_id.and_then(|id| cache.get(id).cloned());
-    let fallback_reasoning = cache.values().next().cloned();
+    // Only inject into the last assistant message that lacks thinking
+    let last_assistant_idx = messages.iter().rposition(|m| {
+        m.role == IrRole::Assistant
+            && !m.content.iter().any(|p| matches!(p, IrContentPart::Thinking { .. }))
+    });
 
-    for msg in messages {
-        if msg.role != IrRole::Assistant {
-            continue;
-        }
+    let Some(idx) = last_assistant_idx else { return };
+    let msg = &mut messages[idx];
 
-        let has_thinking = msg
-            .content
-            .iter()
-            .any(|p| matches!(p, IrContentPart::Thinking { .. }));
-        if has_thinking {
-            continue;
-        }
+    // Prefer exact match by previous_response_id
+    if let Some(reasoning) = previous_response_id.and_then(|id| cache.get(id)) {
+        msg.content.insert(0, IrContentPart::Thinking { text: reasoning.clone() });
+        return;
+    }
 
-        if let Some(reasoning) = cached_by_id.clone() {
-            msg.content
-                .insert(0, IrContentPart::Thinking { text: reasoning });
-            continue;
-        }
+    // Try extracting <thinking> tags from text content
+    let text_content: String = msg
+        .content
+        .iter()
+        .filter_map(|p| match p {
+            IrContentPart::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("");
 
-        let text_content: String = msg
-            .content
-            .iter()
-            .filter_map(|p| match p {
-                IrContentPart::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("");
-
-        let (thinking_opt, remaining) = split_thinking_tags(&text_content);
-        if let Some(thinking) = thinking_opt {
-            msg.content.clear();
-            msg.content.push(IrContentPart::Thinking { text: thinking });
-            let trimmed = remaining.trim();
-            if !trimmed.is_empty() {
-                msg.content.push(IrContentPart::Text {
-                    text: trimmed.to_string(),
-                });
-            }
-            continue;
-        }
-
-        if let Some(reasoning) = fallback_reasoning.clone() {
-            msg.content
-                .insert(0, IrContentPart::Thinking { text: reasoning });
+    let (thinking_opt, remaining) = split_thinking_tags(&text_content);
+    if let Some(thinking) = thinking_opt {
+        msg.content.clear();
+        msg.content.push(IrContentPart::Thinking { text: thinking });
+        let trimmed = remaining.trim();
+        if !trimmed.is_empty() {
+            msg.content.push(IrContentPart::Text { text: trimmed.to_string() });
         }
     }
 }
@@ -1636,17 +1621,22 @@ mod tests {
         let mut cache = HashMap::new();
         cache.insert("resp_1".to_string(), "已缓存推理".to_string());
 
+        // No previous_response_id → no injection (fallback removed)
         inject_cached_reasoning_into_assistant_messages(&mut messages, None, &cache);
 
         assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content.len(), 1);
+        match &messages[0].content[0] {
+            IrContentPart::Text { text } => assert_eq!(text, "最终答案"),
+            other => panic!("expected text content, got {:?}", other),
+        }
+
+        // With matching previous_response_id → inject into last assistant message
+        inject_cached_reasoning_into_assistant_messages(&mut messages, Some("resp_1"), &cache);
         assert_eq!(messages[0].content.len(), 2);
         match &messages[0].content[0] {
             IrContentPart::Thinking { text } => assert_eq!(text, "已缓存推理"),
             other => panic!("expected thinking content, got {:?}", other),
-        }
-        match &messages[0].content[1] {
-            IrContentPart::Text { text } => assert_eq!(text, "最终答案"),
-            other => panic!("expected text content, got {:?}", other),
         }
     }
 }
