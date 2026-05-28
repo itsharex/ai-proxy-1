@@ -286,10 +286,12 @@ async fn handle_proxy(
         .json(&target_body)
         .header("Content-Type", "application/json");
 
-    // Non-streaming: apply per-request timeout from DB settings.
-    // Streaming: no overall timeout — rely on TCP keepalive to detect dead connections.
-    if !ir_request.stream {
-        req_builder = req_builder.timeout(std::time::Duration::from_secs(request_timeout_secs));
+    // Streaming: 24h max for long agent tasks. Non-streaming: 2h from DB.
+    if ir_request.stream {
+        req_builder = req_builder.timeout(std::time::Duration::from_secs(86400));
+    } else {
+        let timeout_secs = if request_timeout_secs < 7200 { 7200 } else { request_timeout_secs };
+        req_builder = req_builder.timeout(std::time::Duration::from_secs(timeout_secs));
     }
 
     match route.target_format {
