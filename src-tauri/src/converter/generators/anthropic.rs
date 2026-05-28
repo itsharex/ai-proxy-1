@@ -24,11 +24,53 @@ impl FormatGenerator for AnthropicGenerator {
                         _ => "user",
                     };
 
-                    let mut message = json!({
-                        "role": role_str,
-                    });
+                    // Filter out ToolUse from content — handled via msg.tool_calls below
+                    let content_for_conv: Vec<IrContentPart> = if msg.role == IrRole::Assistant {
+                        msg.content.iter()
+                            .filter(|p| !matches!(p, IrContentPart::ToolUse { .. }))
+                            .cloned()
+                            .collect()
+                    } else {
+                        msg.content.clone()
+                    };
 
-                    let content = convert_anthropic_content(&msg.content, &msg.role);
+                    let mut content = convert_anthropic_content(&content_for_conv, &msg.role);
+
+                    // Anthropic format: tool_calls become tool_use content blocks
+                    if msg.role == IrRole::Assistant {
+                        if let Some(tool_calls) = &msg.tool_calls {
+                            let mut content_arr = match content {
+                                Value::Array(arr) => arr,
+                                other => {
+                                    if other.as_str().map_or(false, |s| !s.is_empty()) {
+                                        vec![json!({"type": "text", "text": other})]
+                                    } else {
+                                        vec![]
+                                    }
+                                }
+                            };
+                            for tc in tool_calls {
+                                let input: Value = serde_json::from_str(&tc.arguments).unwrap_or_else(|e| {
+                                    tracing::warn!("Failed to parse tool_call arguments as JSON: {}", e);
+                                    Value::Object(serde_json::Map::new())
+                                });
+                                content_arr.push(json!({
+                                    "type": "tool_use",
+                                    "id": tc.id,
+                                    "name": tc.name,
+                                    "input": input,
+                                }));
+                            }
+                            content = json!(content_arr);
+                        }
+
+                        // Ensure assistant content is never empty
+                        if content.is_array() && content.as_array().map_or(true, |a| a.is_empty()) {
+                            content = json!([{"type": "text", "text": ""}]);
+                        }
+                    }
+
+                    let mut message = json!({ "role": role_str });
                     message["content"] = content;
 
                     messages.push(message);
