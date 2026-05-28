@@ -371,7 +371,14 @@ async fn handle_proxy(
             tracing::error!("Upstream error logging failed: {}", le);
         }
 
-        let mut response = body_text.into_response();
+        let error_body = serde_json::json!({
+            "error": {
+                "message": err_msg,
+                "type": "upstream_error",
+                "code": status_code,
+            }
+        });
+        let mut response = axum::Json(error_body).into_response();
         *response.status_mut() = status;
         return response;
     }
