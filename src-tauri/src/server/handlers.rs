@@ -32,7 +32,7 @@ use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
 use crate::logging::store::log_request;
 use crate::provider::manager::ProviderManager;
-use crate::usage::tracker::UsageTracker;
+
 
 pub async fn handle_completions(request: Request) -> Response {
     handle_proxy(request, ClientFormat::Completions, None, false).await
@@ -433,19 +433,6 @@ async fn handle_proxy(
             tracing::error!("Non-stream logging failed: {}", e);
         }
 
-        if prompt_tokens > 0 || completion_tokens > 0 {
-            if let Err(e) = UsageTracker::record(
-                &target_model,
-                &route.provider_name,
-                prompt_tokens,
-                completion_tokens,
-            )
-            .await
-            {
-                tracing::error!("Non-stream usage tracking failed: {}", e);
-            }
-        }
-
         let mut response = axum::Json(client_response).into_response();
         *response.status_mut() = status;
         response
@@ -465,7 +452,6 @@ async fn handle_proxy(
             provider_name: route.provider_name.clone(),
             provider_format: route.target_format.clone(),
             model: ir_request.model.clone(),
-            target_model: target_model.clone(),
             start: start.clone(),
             prompt_tokens: AtomicU32::new(0),
             completion_tokens: AtomicU32::new(0),
@@ -1147,19 +1133,6 @@ async fn handle_proxy(
             {
                 tracing::error!("Stream logging failed: {}", e);
             }
-
-            if pt > 0 || ct > 0 {
-                if let Err(e) = UsageTracker::record(
-                    &target_model,
-                    &route.provider_name,
-                    pt,
-                    ct,
-                )
-                .await
-                {
-                    tracing::error!("Stream usage tracking failed: {}", e);
-                }
-            }
         };
 
         let body_stream = axum::body::Body::from_stream(sse_stream);
@@ -1384,7 +1357,6 @@ struct StreamLogState {
     provider_name: String,
     provider_format: ClientFormat,
     model: String,
-    target_model: String,
     start: std::time::Instant,
     prompt_tokens: AtomicU32,
     completion_tokens: AtomicU32,
@@ -1429,13 +1401,6 @@ impl Drop for StreamLoggingGuard {
             .await
             {
                 tracing::error!("Stream guard logging failed: {}", e);
-            }
-            if pt > 0 || ct > 0 {
-                if let Err(e) =
-                    UsageTracker::record(&state.target_model, &state.provider_name, pt, ct).await
-                {
-                    tracing::error!("Stream guard usage tracking failed: {}", e);
-                }
             }
         });
     }

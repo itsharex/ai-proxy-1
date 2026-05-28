@@ -95,6 +95,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 008: add timeout settings");
     }
 
+    // Migration 009: drop usage_stats table (statistics now derived from request_logs)
+    let has_usage_stats: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='usage_stats'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if has_usage_stats {
+        let migration9 = include_str!("../../migrations/009_drop_usage_stats.sql");
+        sqlx::query(migration9).execute(pool).await?;
+        info!("Applied migration 009: drop usage_stats table");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }

@@ -5,6 +5,7 @@ const routes = [
   { path: '/providers', name: 'Providers', component: () => import('./views/Providers.vue') },
   { path: '/models', name: 'Models', component: () => import('./views/Models.vue') },
   { path: '/logs', name: 'Logs', component: () => import('./views/Logs.vue') },
+  { path: '/runtime-logs', name: 'RuntimeLogs', component: () => import('./views/RuntimeLogs.vue') },
   { path: '/statistics', name: 'Statistics', component: () => import('./views/Statistics.vue') },
   { path: '/apps', name: 'Apps', component: () => import('./views/Apps.vue') },
   { path: '/rules', name: 'Rules', component: () => import('./views/Rules.vue') },

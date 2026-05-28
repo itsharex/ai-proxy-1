@@ -12,6 +12,14 @@ mod apps;
 mod update;
 mod update_timer;
 
+use crate::logging::layer::BroadcastLayer;
+
+static LOG_LAYER: std::sync::OnceLock<BroadcastLayer> = std::sync::OnceLock::new();
+
+pub fn get_log_layer() -> &'static BroadcastLayer {
+    LOG_LAYER.get_or_init(BroadcastLayer::new)
+}
+
 use tauri::Manager;
 use tauri::Emitter;
 use tauri::menu::{Menu, MenuItem};
@@ -167,7 +175,12 @@ fn should_show_main_window_for_run_event(event: &tauri::RunEvent) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt::init();
+    use tracing_subscriber::prelude::*;
+
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::Layer::default())
+        .with(get_log_layer().clone())
+        .init();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

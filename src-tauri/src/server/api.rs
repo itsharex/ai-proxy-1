@@ -1,5 +1,6 @@
 use axum::Json;
 use axum::extract::{Path, Query};
+use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::routing;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -22,6 +23,8 @@ use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
 use crate::apps::handlers;
 use crate::logging::store::log_request;
+use crate::get_log_layer;
+use crate::usage::pricing::PricingTable;
 
 // --- Unified response types ---
 
@@ -334,15 +337,22 @@ async fn get_usage(
     Query(query): Query<UsageQuery>,
 ) -> Result<Json<ApiResponse<UsageSummary>>, Json<ApiError>> {
     let pool = get_pool().await;
-    let rows: Vec<(String, String, i64, i64, i64, f64, i64)> = sqlx::query_as(
-        "SELECT model, provider_name, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), SUM(cost_estimate), SUM(request_count) FROM usage_stats WHERE bucket_minute >= datetime('now', ? || ' days') GROUP BY model, provider_name ORDER BY SUM(total_tokens) DESC",
+    let rows: Vec<(String, String, i64, i64, i64, i64)> = sqlx::query_as(
+        "SELECT model, provider_name, \
+         SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*) \
+         FROM request_logs \
+         WHERE created_at >= datetime('now', ? || ' days') AND status_code = 200 \
+         GROUP BY model, provider_name \
+         ORDER BY SUM(total_tokens) DESC",
     )
     .bind(format!("-{}", query.days))
     .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
+    let pricing = PricingTable::default();
     let mut total_cost = 0.0;
     let mut total_requests = 0i64;
-    let stats: Vec<UsageStat> = rows.into_iter().map(|(model, provider_name, prompt_tokens, completion_tokens, total_tokens, cost_estimate, request_count)| {
+    let stats: Vec<UsageStat> = rows.into_iter().map(|(model, provider_name, prompt_tokens, completion_tokens, total_tokens, request_count)| {
+        let cost_estimate = pricing.get_cost(&model, prompt_tokens as u32, completion_tokens as u32);
         total_cost += cost_estimate;
         total_requests += request_count;
         UsageStat { model, provider_name, prompt_tokens, completion_tokens, total_tokens, cost_estimate, request_count }
@@ -365,9 +375,9 @@ async fn get_usage_trend(
 ) -> Result<Json<ApiResponse<Vec<UsageTrendPoint>>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String, i64, i64, i64)> = sqlx::query_as(
-        "SELECT DATE(bucket_minute), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
-         FROM usage_stats WHERE bucket_minute >= datetime('now', ? || ' days') \
-         GROUP BY DATE(bucket_minute), model ORDER BY DATE(bucket_minute) ASC, model ASC"
+        "SELECT DATE(created_at), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
+         FROM request_logs WHERE created_at >= datetime('now', ? || ' days') AND status_code = 200 \
+         GROUP BY DATE(created_at), model ORDER BY DATE(created_at) ASC, model ASC"
     )
     .bind(format!("-{}", query.days))
     .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
@@ -379,7 +389,7 @@ async fn get_usage_trend(
 
 async fn clear_usage() -> Result<Json<ApiResponse<serde_json::Value>>, Json<ApiError>> {
     let pool = get_pool().await;
-    sqlx::query("DELETE FROM usage_stats")
+    sqlx::query("DELETE FROM request_logs")
         .execute(pool)
         .await
         .map_err(|e| err_json(e.to_string()))?;
@@ -825,6 +835,35 @@ async fn test_model(
     }))
 }
 
+// --- Runtime log handlers ---
+
+async fn get_runtime_logs() -> Result<Json<ApiResponse<Vec<crate::logging::layer::LogEntry>>>, Json<ApiError>> {
+    let layer = get_log_layer();
+    let buffer = layer.buffer();
+    let entries = buffer.lock().unwrap().snapshot();
+    Ok(ok(entries))
+}
+
+async fn runtime_logs_ws(ws: WebSocketUpgrade) -> axum::response::Response {
+    ws.on_upgrade(handle_runtime_logs_ws)
+}
+
+async fn handle_runtime_logs_ws(mut socket: WebSocket) {
+    let mut rx = get_log_layer().subscribe();
+    loop {
+        match rx.recv().await {
+            Ok(entry) => {
+                let msg = serde_json::to_string(&entry).unwrap_or_default();
+                if socket.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+                    break;
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
 // --- Route registration ---
 
 pub fn api_routes() -> axum::Router {
@@ -842,4 +881,6 @@ pub fn api_routes() -> axum::Router {
         .route("/apps", axum::routing::get(handlers::list_apps))
         .route("/apps/launch", axum::routing::post(handlers::launch_app))
         .route("/apps/:app_type/path", axum::routing::put(handlers::set_app_path))
+        .route("/runtime-logs", axum::routing::get(get_runtime_logs))
+        .route("/runtime-logs/stream", axum::routing::get(runtime_logs_ws))
 }
