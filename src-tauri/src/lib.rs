@@ -178,8 +178,8 @@ pub fn run() {
     use tracing_subscriber::prelude::*;
 
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::Layer::default())
-        .with(get_log_layer().clone())
+        .with(tracing_subscriber::fmt::Layer::default().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+        .with(get_log_layer().clone().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
         .init();
 
     tauri::Builder::default()

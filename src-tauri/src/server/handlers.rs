@@ -83,6 +83,7 @@ async fn handle_proxy(
     let body_value: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
         Err(e) => {
+            tracing::error!("[ERR] invalid request body: {}", e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, "proxy", &client_format,
                 "unknown", false, 400, start.elapsed().as_millis() as i64,
@@ -96,6 +97,12 @@ async fn handle_proxy(
 
     let parser = get_parser(&client_format);
     let generator = get_generator(&client_format);
+
+    {
+        let model_hint = body_value["model"].as_str().unwrap_or("unknown");
+        let stream = body_value["stream"].as_bool().unwrap_or(false);
+        info!("[REQ] {:?} model={} stream={}", client_format, model_hint, stream);
+    }
 
     // Debug: log raw messages when tool-related content is present
     if let Some(msgs) = body_value["messages"].as_array() {
@@ -114,8 +121,9 @@ async fn handle_proxy(
             r
         }
         Err(e) => {
-            error!("Parse request error: {}", e);
             let model_hint = body_value["model"].as_str().unwrap_or("unknown");
+            tracing::error!("[ERR] parse failed model={}: {}", model_hint, e);
+            error!("Parse request error: {}", e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, "proxy", &client_format,
                 model_hint, false, 400, start.elapsed().as_millis() as i64,
@@ -146,9 +154,11 @@ async fn handle_proxy(
     let route = match ProviderManager::find_for_model(&ir_request.model).await {
         Ok(r) => {
             info!("Route found: model={} -> {} ({:?} via {})", ir_request.model, r.target_model, r.target_format, r.provider_name);
+            info!("[ROUTE] {} -> {} ({})", ir_request.model, r.target_model, r.provider_name);
             r
         }
         Err(e) => {
+            tracing::error!("[ERR] no route for model={}: {}", ir_request.model, e);
             error!("Route not found for model '{}': {}", ir_request.model, e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, "proxy", &client_format,
@@ -300,6 +310,7 @@ async fn handle_proxy(
         Ok(r) => r,
         Err(e) => {
             let err = ProxyError::Network(format!("request to provider failed: {}", e));
+            tracing::error!("[ERR] upstream network error model={}: {}", target_model, e);
             if let Err(le) = log_request_entry(
                 &request_id,
                 &client_format,
@@ -335,6 +346,7 @@ async fn handle_proxy(
             }
         };
         let body_text = String::from_utf8_lossy(&resp_body).into_owned();
+        tracing::error!("[ERR] upstream status={} model={}", status_code, target_model);
         error!("Upstream error {}: {}", status_code, body_text);
 
         let err_msg: String = body_text.chars().take(500).collect();
@@ -432,6 +444,9 @@ async fn handle_proxy(
         {
             tracing::error!("Non-stream logging failed: {}", e);
         }
+
+        info!("[DONE] {} status=200 duration={}ms tokens={}/{}",
+            target_model, start.elapsed().as_millis(), prompt_tokens, completion_tokens);
 
         let mut response = axum::Json(client_response).into_response();
         *response.status_mut() = status;
@@ -1133,6 +1148,9 @@ async fn handle_proxy(
             {
                 tracing::error!("Stream logging failed: {}", e);
             }
+
+            info!("[DONE] {} status=200 duration={}ms tokens={}/{} ttft={}ms",
+                target_model, elapsed, pt, ct, ttft_ms.unwrap_or(0));
         };
 
         let body_stream = axum::body::Body::from_stream(sse_stream);

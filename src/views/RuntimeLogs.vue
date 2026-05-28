@@ -12,13 +12,13 @@ interface LogEntry {
 }
 
 const logs = ref<LogEntry[]>([])
-const levelFilter = ref<string>('ALL')
+const levelFilter = ref<string>('INFO')
 const paused = ref(false)
 const autoScroll = ref(true)
 const logContainer = ref<HTMLElement | null>(null)
 let ws: WebSocket | null = null
 
-const levels = ['ALL', 'ERROR', 'WARN', 'INFO', 'DEBUG']
+const levels = ['INFO', 'WARN', 'ERROR']
 
 const filteredLogs = computed(() => {
   if (levelFilter.value === 'ALL') return logs.value
