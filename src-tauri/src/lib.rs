@@ -1,4 +1,5 @@
 pub mod converter;
+pub mod http;
 mod db;
 mod error;
 mod provider;

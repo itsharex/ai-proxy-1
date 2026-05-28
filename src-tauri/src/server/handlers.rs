@@ -12,7 +12,6 @@ use axum::extract::{Request, Path};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::stream::StreamExt;
-use reqwest::Client;
 use serde_json::Value;
 use tracing::{error, info};
 
@@ -272,26 +271,26 @@ async fn handle_proxy(
 
     info!("Upstream request: {} {}", "POST", url);
 
-    let pool = crate::db::pool::get_pool().await;
-    let (request_timeout_secs, connect_timeout_secs): (u64, u64) = {
+    let request_timeout_secs: u64 = {
+        let pool_ref = crate::db::pool::get_pool().await;
         let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT key, value FROM settings WHERE key IN ('request_timeout', 'connect_timeout')"
-        ).fetch_all(pool).await.unwrap_or_default();
+            "SELECT key, value FROM settings WHERE key = 'request_timeout'"
+        ).fetch_all(pool_ref).await.unwrap_or_default();
         let map: HashMap<String, String> = rows.into_iter().collect();
-        let rt = map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(1200);
-        let ct = map.get("connect_timeout").and_then(|v| v.parse().ok()).unwrap_or(30);
-        (rt, ct)
+        map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(1200)
     };
 
-    let http_client = Client::builder()
-        .timeout(std::time::Duration::from_secs(request_timeout_secs))
-        .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
-        .build()
-        .unwrap_or_default();
+    let http_client = crate::http::SHARED_HTTP_CLIENT.clone();
     let mut req_builder = http_client
         .post(&url)
         .json(&target_body)
         .header("Content-Type", "application/json");
+
+    // Non-streaming: apply per-request timeout from DB settings.
+    // Streaming: no overall timeout — rely on TCP keepalive to detect dead connections.
+    if !ir_request.stream {
+        req_builder = req_builder.timeout(std::time::Duration::from_secs(request_timeout_secs));
+    }
 
     match route.target_format {
         ClientFormat::Anthropic => {
@@ -473,6 +472,7 @@ async fn handle_proxy(
             cached_tokens: AtomicU32::new(0),
             ttft_ms: Mutex::new(None),
             logged: AtomicBool::new(false),
+            interrupted: AtomicBool::new(false),
         });
         let stream_state_ref = stream_state.clone();
 
@@ -513,6 +513,7 @@ async fn handle_proxy(
                     Ok(c) => c,
                     Err(e) => {
                         error!("Stream error: {}", e);
+                        stream_state_ref.interrupted.store(true, Ordering::SeqCst);
                         break;
                     }
                 };
@@ -1122,6 +1123,27 @@ async fn handle_proxy(
                 }
             }
 
+            // Emit error events for interrupted streams so clients can detect the failure
+            if started && !finished {
+                match client_format {
+                    ClientFormat::Completions | ClientFormat::Gemini => {
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                            format!("data: {{\"error\": {{\"message\": \"stream interrupted by proxy\", \"type\": \"server_error\"}}}}\n\ndata: [DONE]\n\n")
+                        ));
+                    }
+                    ClientFormat::Anthropic => {
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                            format!("event: error\ndata: {{\"type\": \"error\", \"error\": {{\"type\": \"api_error\", \"message\": \"stream interrupted by proxy\"}}}}\n\n")
+                        ));
+                    }
+                    ClientFormat::Responses => {
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                            format!("data: {{\"type\": \"response.failed\", \"error\": {{\"message\": \"stream interrupted by proxy\"}}}}\n\n")
+                        ));
+                    }
+                }
+            }
+
             let elapsed = start.elapsed().as_millis() as i64;
             let pt = total_prompt as i64;
             let ct = total_completion as i64;
@@ -1381,6 +1403,7 @@ struct StreamLogState {
     cached_tokens: AtomicU32,
     ttft_ms: Mutex<Option<i64>>,
     logged: AtomicBool,
+    interrupted: AtomicBool,
 }
 
 struct StreamLoggingGuard {
@@ -1394,12 +1417,19 @@ impl Drop for StreamLoggingGuard {
         }
 
         let state = self.state.clone();
+        let interrupted = state.interrupted.load(Ordering::SeqCst);
         tokio::spawn(async move {
             let pt = state.prompt_tokens.load(Ordering::SeqCst) as i64;
             let ct = state.completion_tokens.load(Ordering::SeqCst) as i64;
             let cache_t = state.cached_tokens.load(Ordering::SeqCst) as i64;
             let elapsed = state.start.elapsed().as_millis() as i64;
             let ttft = *state.ttft_ms.lock().unwrap();
+
+            let (status_code, error_msg) = if interrupted {
+                (502, Some("stream interrupted".to_string()))
+            } else {
+                (200, None)
+            };
 
             if let Err(e) = log_request_entry(
                 &state.request_id,
@@ -1408,9 +1438,9 @@ impl Drop for StreamLoggingGuard {
                 &state.provider_format,
                 &state.model,
                 true,
-                200,
+                status_code,
                 elapsed,
-                None,
+                error_msg.as_deref(),
                 pt,
                 ct,
                 cache_t,
@@ -1419,6 +1449,13 @@ impl Drop for StreamLoggingGuard {
             .await
             {
                 tracing::error!("Stream guard logging failed: {}", e);
+            }
+
+            if interrupted {
+                tracing::warn!(
+                    "[INTERRUPTED] {} duration={}ms tokens={}/{} - stream was interrupted",
+                    state.model, elapsed, pt, ct
+                );
             }
         });
     }
