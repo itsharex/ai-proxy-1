@@ -70,6 +70,12 @@ const pieChartRef = ref<HTMLElement | null>(null)
 let lineChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return n.toString()
+}
+
 const summaryColumns = [
   { title: '模型', key: 'model', width: 160 },
   { title: '供应商', key: 'provider_name', width: 140 },
@@ -77,20 +83,20 @@ const summaryColumns = [
   {
     title: 'Prompt Tokens',
     key: 'prompt_tokens',
-    width: 140,
-    render: (row: UsageStat) => row.prompt_tokens.toLocaleString(),
+    width: 120,
+    render: (row: UsageStat) => formatTokens(row.prompt_tokens),
   },
   {
     title: 'Completion Tokens',
     key: 'completion_tokens',
-    width: 160,
-    render: (row: UsageStat) => row.completion_tokens.toLocaleString(),
+    width: 140,
+    render: (row: UsageStat) => formatTokens(row.completion_tokens),
   },
   {
     title: '总 Tokens',
     key: 'total_tokens',
-    width: 120,
-    render: (row: UsageStat) => row.total_tokens.toLocaleString(),
+    width: 100,
+    render: (row: UsageStat) => formatTokens(row.total_tokens),
   },
   {
     title: '缓存命中率',
