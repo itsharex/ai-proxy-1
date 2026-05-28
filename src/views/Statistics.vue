@@ -10,7 +10,6 @@
               <n-radio-button value="week">本周</n-radio-button>
               <n-radio-button value="month">本月</n-radio-button>
             </n-radio-group>
-            <n-button type="error" size="small" @click="handleClearUsage">清除统计</n-button>
           </n-space>
         </n-space>
       </template>
@@ -42,8 +41,6 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useDialog } from 'naive-ui'
-const dialog = useDialog()
 import { api } from '../api'
 import * as echarts from 'echarts'
 import type { UsageTrendPoint } from '../types'
@@ -54,6 +51,7 @@ interface UsageStat {
   prompt_tokens: number
   completion_tokens: number
   total_tokens: number
+  cached_tokens: number
   cost_estimate: number
   request_count: number
 }
@@ -93,6 +91,15 @@ const summaryColumns = [
     key: 'total_tokens',
     width: 120,
     render: (row: UsageStat) => row.total_tokens.toLocaleString(),
+  },
+  {
+    title: '缓存命中率',
+    key: 'cache_hit_rate',
+    width: 110,
+    render: (row: UsageStat) => {
+      if (row.prompt_tokens === 0) return '-'
+      return `${((row.cached_tokens / row.prompt_tokens) * 100).toFixed(1)}%`
+    },
   },
   {
     title: '费用',
@@ -211,25 +218,6 @@ async function fetchTrend() {
 function handleRangeChange() {
   fetchStats()
   fetchTrend()
-}
-
-async function handleClearUsage() {
-  dialog.warning({
-    title: '清除统计',
-    content: '确定要清除所有用量统计吗？此操作不可恢复。',
-    positiveText: '确定清除',
-    negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await api<{ deleted: boolean }>('/api/usage', { method: 'DELETE' })
-        stats.value = []
-        if (lineChart) lineChart.setOption(buildLineChartOptions([]))
-        if (pieChart) pieChart.setOption(buildPieChartOptions([]))
-      } catch (error) {
-        console.error('Failed to clear usage:', error)
-      }
-    },
-  })
 }
 
 function handleResize() {

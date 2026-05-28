@@ -314,6 +314,7 @@ struct UsageStat {
     prompt_tokens: i64,
     completion_tokens: i64,
     total_tokens: i64,
+    cached_tokens: i64,
     cost_estimate: f64,
     request_count: i64,
 }
@@ -337,9 +338,9 @@ async fn get_usage(
     Query(query): Query<UsageQuery>,
 ) -> Result<Json<ApiResponse<UsageSummary>>, Json<ApiError>> {
     let pool = get_pool().await;
-    let rows: Vec<(String, String, i64, i64, i64, i64)> = sqlx::query_as(
+    let rows: Vec<(String, String, i64, i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT model, provider_name, \
-         SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*) \
+         SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*), SUM(cached_tokens) \
          FROM request_logs \
          WHERE created_at >= datetime('now', ? || ' days') AND status_code = 200 \
          GROUP BY model, provider_name \
@@ -351,11 +352,11 @@ async fn get_usage(
     let pricing = PricingTable::default();
     let mut total_cost = 0.0;
     let mut total_requests = 0i64;
-    let stats: Vec<UsageStat> = rows.into_iter().map(|(model, provider_name, prompt_tokens, completion_tokens, total_tokens, request_count)| {
+    let stats: Vec<UsageStat> = rows.into_iter().map(|(model, provider_name, prompt_tokens, completion_tokens, total_tokens, request_count, cached_tokens)| {
         let cost_estimate = pricing.get_cost(&model, prompt_tokens as u32, completion_tokens as u32);
         total_cost += cost_estimate;
         total_requests += request_count;
-        UsageStat { model, provider_name, prompt_tokens, completion_tokens, total_tokens, cost_estimate, request_count }
+        UsageStat { model, provider_name, prompt_tokens, completion_tokens, total_tokens, cached_tokens, cost_estimate, request_count }
     }).collect();
 
     Ok(ok(UsageSummary { stats, total_cost, total_requests }))
