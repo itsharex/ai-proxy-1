@@ -57,8 +57,8 @@ function connectWs() {
     try {
       const entry: LogEntry = JSON.parse(event.data)
       logs.value.push(entry)
-      if (logs.value.length > 5000) {
-        logs.value = logs.value.slice(-4000)
+      if (logs.value.length > 1000) {
+        logs.value = logs.value.slice(-800)
       }
       scrollToBottom()
     } catch {}
