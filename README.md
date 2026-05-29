@@ -2,6 +2,8 @@
 
 本地 AI/LLM 代理服务，统一管理多个大模型供应商的 API 调用。基于 Tauri 2 桌面应用（Rust 后端 + Vue 3 前端），开箱即用。
 
+**仓库地址：** [GitHub](https://github.com/mrhuangyong/ai-proxy) | [Gitee](https://gitee.com/mrhy/ai-proxy)
+
 ## 功能特性
 
 ### 核心代理
@@ -154,4 +156,4 @@ git push origin v0.3.0
 
 ## License
 
-Private
+[Apache-2.0](LICENSE)
