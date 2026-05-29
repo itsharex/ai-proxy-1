@@ -123,6 +123,7 @@ impl FormatParser for GeminiParser {
             frequency_penalty: None,
             seed: None,
             thinking: None,
+            stream_options: None,
             metadata: std::collections::HashMap::new(),
             extra: std::collections::HashMap::new(),
         })

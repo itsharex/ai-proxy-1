@@ -192,6 +192,10 @@ impl FormatGenerator for CompletionsGenerator {
             body["seed"] = json!(seed);
         }
 
+        if let Some(stream_options) = &ir.stream_options {
+            body["stream_options"] = stream_options.clone();
+        }
+
         // Skip reasoning/thinking for providers that don't support it
 
         Ok(body)
@@ -237,23 +241,45 @@ impl FormatGenerator for CompletionsGenerator {
             delta["tool_calls"] = json!(calls);
         }
 
+        let normalized_finish = chunk.finish_reason.as_ref().map(|reason| {
+            match reason.as_str() {
+                "stop" | "end_turn" | "completed" => "stop",
+                "tool_calls" | "tool_use" => "tool_calls",
+                "length" | "max_tokens" => "length",
+                "content_filter" => "content_filter",
+                _ => "stop",
+            }
+        });
+
         let mut choice = json!({
             "index": 0,
             "delta": delta,
         });
 
-        if let Some(reason) = &chunk.finish_reason {
+        if let Some(reason) = normalized_finish {
             choice["finish_reason"] = json!(reason);
         } else {
             choice["finish_reason"] = json!(null);
         }
 
-        let chunk_data = json!({
+        let mut chunk_data = json!({
             "id": id,
             "object": "chat.completion.chunk",
             "created": chrono::Utc::now().timestamp(),
             "choices": [choice],
         });
+
+        if let Some(model) = &chunk.model {
+            chunk_data["model"] = json!(model);
+        }
+
+        if let Some(usage) = &chunk.usage {
+            chunk_data["usage"] = json!({
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            });
+        }
 
         format!("data: {}\n\n", chunk_data)
     }
@@ -304,12 +330,22 @@ impl FormatGenerator for CompletionsGenerator {
             "choices": [{
                 "index": 0,
                 "message": message,
-                "finish_reason": ir.finish_reason.as_deref().unwrap_or("stop"),
+                "finish_reason": match ir.finish_reason.as_deref() {
+                    Some("stop") | Some("end_turn") | Some("completed") => "stop",
+                    Some("tool_calls") | Some("tool_use") => "tool_calls",
+                    Some("length") | Some("max_tokens") => "length",
+                    Some("content_filter") => "content_filter",
+                    Some(r) => r,
+                    None => "stop",
+                },
             }],
             "usage": {
                 "prompt_tokens": ir.usage.prompt_tokens,
                 "completion_tokens": ir.usage.completion_tokens,
                 "total_tokens": ir.usage.total_tokens,
+                "prompt_tokens_details": {
+                    "cached_tokens": ir.usage.cached_tokens,
+                }
             }
         }))
     }

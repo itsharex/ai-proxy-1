@@ -187,11 +187,15 @@ impl FormatGenerator for GeminiGenerator {
         });
 
         if let Some(usage) = &chunk.usage {
-            chunk_data["usageMetadata"] = json!({
+            let mut meta = json!({
                 "promptTokenCount": usage.prompt_tokens,
                 "candidatesTokenCount": usage.completion_tokens,
                 "totalTokenCount": usage.total_tokens,
             });
+            if usage.cached_tokens > 0 {
+                meta["cachedContentTokenCount"] = json!(usage.cached_tokens);
+            }
+            chunk_data["usageMetadata"] = meta;
         }
 
         format!("data: {}\n\n", chunk_data)
@@ -241,13 +245,18 @@ impl FormatGenerator for GeminiGenerator {
             candidate["finishReason"] = json!("STOP");
         }
 
+        let mut usage_meta = json!({
+            "promptTokenCount": ir.usage.prompt_tokens,
+            "candidatesTokenCount": ir.usage.completion_tokens,
+            "totalTokenCount": ir.usage.total_tokens,
+        });
+        if ir.usage.cached_tokens > 0 {
+            usage_meta["cachedContentTokenCount"] = json!(ir.usage.cached_tokens);
+        }
+
         Ok(json!({
             "candidates": [candidate],
-            "usageMetadata": {
-                "promptTokenCount": ir.usage.prompt_tokens,
-                "candidatesTokenCount": ir.usage.completion_tokens,
-                "totalTokenCount": ir.usage.total_tokens,
-            }
+            "usageMetadata": usage_meta,
         }))
     }
 }

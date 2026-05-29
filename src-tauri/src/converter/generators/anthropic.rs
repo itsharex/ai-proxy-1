@@ -173,7 +173,14 @@ impl FormatGenerator for AnthropicGenerator {
         Ok(body)
     }
 
-    fn generate_stream_start(&self, response_id: &str, model: &str) -> Option<String> {
+    fn generate_stream_start(&self, response_id: &str, model: &str, input_tokens: u32, output_tokens: u32, cached_tokens: u32) -> Option<String> {
+        let mut usage = json!({
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        });
+        if cached_tokens > 0 {
+            usage["cache_read_input_tokens"] = json!(cached_tokens);
+        }
         let event = json!({
             "type": "message_start",
             "message": {
@@ -184,10 +191,7 @@ impl FormatGenerator for AnthropicGenerator {
                 "content": [],
                 "stop_reason": null,
                 "stop_sequence": null,
-                "usage": {
-                    "input_tokens": 0,
-                    "output_tokens": 0,
-                }
+                "usage": usage,
             }
         });
         Some(format!("event: message_start\ndata: {}\n\n", event))
@@ -342,6 +346,14 @@ impl FormatGenerator for AnthropicGenerator {
             None => "end_turn",
         };
 
+        let mut usage = json!({
+            "input_tokens": ir.usage.prompt_tokens,
+            "output_tokens": ir.usage.completion_tokens,
+        });
+        if ir.usage.cached_tokens > 0 {
+            usage["cache_read_input_tokens"] = json!(ir.usage.cached_tokens);
+        }
+
         Ok(json!({
             "id": id,
             "type": "message",
@@ -350,10 +362,7 @@ impl FormatGenerator for AnthropicGenerator {
             "content": content,
             "stop_reason": stop_reason,
             "stop_sequence": null,
-            "usage": {
-                "input_tokens": ir.usage.prompt_tokens,
-                "output_tokens": ir.usage.completion_tokens,
-            }
+            "usage": usage,
         }))
     }
 }

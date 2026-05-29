@@ -46,6 +46,7 @@ fn sample_ir_request() -> IrRequest {
         frequency_penalty: None,
         seed: None,
         thinking: None,
+        stream_options: None,
         metadata: std::collections::HashMap::new(),
         extra: std::collections::HashMap::new(),
     }
@@ -218,6 +219,7 @@ fn completions_tool_calls_request() {
         frequency_penalty: None,
         seed: None,
         thinking: None,
+        stream_options: None,
         metadata: std::collections::HashMap::new(),
         extra: std::collections::HashMap::new(),
     };

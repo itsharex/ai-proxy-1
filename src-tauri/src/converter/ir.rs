@@ -19,6 +19,7 @@ pub struct IrRequest {
     pub frequency_penalty: Option<f32>,
     pub seed: Option<u64>,
     pub thinking: Option<IrThinkingConfig>,
+    pub stream_options: Option<Value>,
     pub metadata: HashMap<String, Value>,
     pub extra: HashMap<String, Value>,
 }

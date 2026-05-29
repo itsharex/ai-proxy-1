@@ -126,6 +126,7 @@ impl FormatParser for ResponsesParser {
             frequency_penalty: None,
             seed: None,
             thinking,
+            stream_options: None,
             metadata: std::collections::HashMap::new(),
             extra,
         })

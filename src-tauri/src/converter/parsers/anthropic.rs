@@ -125,6 +125,7 @@ impl FormatParser for AnthropicParser {
             frequency_penalty: None,
             seed: None,
             thinking,
+            stream_options: None,
             metadata: std::collections::HashMap::new(),
             extra,
         })

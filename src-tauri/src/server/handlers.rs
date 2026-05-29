@@ -632,7 +632,7 @@ async fn handle_proxy(
                             || ir_chunk.delta_tool_calls.is_some()
                             || ir_chunk.finish_reason.is_some();
                         if has_content {
-                            if let Some(start_event) = client_generator.generate_stream_start(&response_id, &model_name) {
+                            if let Some(start_event) = client_generator.generate_stream_start(&response_id, &model_name, total_prompt, total_completion, total_cached) {
                                 yield Ok::<_, std::convert::Infallible>(Bytes::from(start_event));
                             }
                             started = true;
@@ -760,9 +760,13 @@ async fn handle_proxy(
                                 other => other.unwrap_or("end_turn"),
                             };
 
-                            let usage = ir_chunk.usage.as_ref().map(|u| serde_json::json!({
-                                "output_tokens": u.completion_tokens,
-                            })).unwrap_or(serde_json::json!({ "output_tokens": 0 }));
+                            let mut usage = serde_json::json!({
+                                "input_tokens": total_prompt,
+                                "output_tokens": total_completion,
+                            });
+                            if total_cached > 0 {
+                                usage["cache_read_input_tokens"] = serde_json::json!(total_cached);
+                            }
 
                             let message_delta = serde_json::json!({
                                 "type": "message_delta",
@@ -1244,6 +1248,24 @@ async fn handle_proxy(
                     if ir_chunk.finish_reason.is_some() && !finished {
                         // Send [DONE] marker for Completions format
                         if matches!(client_format, ClientFormat::Completions) {
+                            // Emit final usage chunk with accumulated totals
+                            if total_prompt > 0 || total_completion > 0 {
+                                let usage_chunk = serde_json::json!({
+                                    "id": response_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": chrono::Utc::now().timestamp(),
+                                    "model": model_name,
+                                    "choices": [],
+                                    "usage": {
+                                        "prompt_tokens": total_prompt,
+                                        "completion_tokens": total_completion,
+                                        "total_tokens": total_prompt + total_completion,
+                                    }
+                                });
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", usage_chunk)
+                                ));
+                            }
                             yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
                         }
                         finished = true;
@@ -1307,6 +1329,23 @@ async fn handle_proxy(
                                     }
                                     if ir_chunk.finish_reason.is_some() {
                                         if matches!(client_format, ClientFormat::Completions) {
+                                            if total_prompt > 0 || total_completion > 0 {
+                                                let usage_chunk = serde_json::json!({
+                                                    "id": response_id,
+                                                    "object": "chat.completion.chunk",
+                                                    "created": chrono::Utc::now().timestamp(),
+                                                    "model": model_name,
+                                                    "choices": [],
+                                                    "usage": {
+                                                        "prompt_tokens": total_prompt,
+                                                        "completion_tokens": total_completion,
+                                                        "total_tokens": total_prompt + total_completion,
+                                                    }
+                                                });
+                                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                                    format!("data: {}\n\n", usage_chunk)
+                                                ));
+                                            }
                                             yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
                                         }
                                         finished = true;

@@ -223,7 +223,7 @@ impl FormatGenerator for ResponsesGenerator {
         String::new()
     }
 
-    fn generate_stream_start(&self, response_id: &str, model: &str) -> Option<String> {
+    fn generate_stream_start(&self, response_id: &str, model: &str, _input_tokens: u32, _output_tokens: u32, _cached_tokens: u32) -> Option<String> {
         let created = json!({
             "type": "response.created",
             "response": {
@@ -304,6 +304,10 @@ impl FormatGenerator for ResponsesGenerator {
             "usage": {
                 "input_tokens": ir.usage.prompt_tokens,
                 "output_tokens": ir.usage.completion_tokens,
+                "total_tokens": ir.usage.total_tokens,
+                "input_tokens_details": {
+                    "cached_tokens": ir.usage.cached_tokens,
+                }
             },
             "model": ir.model.as_deref().unwrap_or(""),
         }))

@@ -676,13 +676,14 @@ async fn test_model(
         top_p: None,
         top_k: None,
         max_tokens: Some(32),
-        stream: false,
+        stream: true,
         stop_sequences: None,
         response_format: None,
         presence_penalty: None,
         frequency_penalty: None,
         seed: None,
         thinking: None,
+        stream_options: None,
         metadata: HashMap::new(),
         extra: HashMap::new(),
     };
@@ -788,33 +789,26 @@ async fn test_model(
         }));
     }
 
-    let resp_value: serde_json::Value = match serde_json::from_str(&resp_body) {
-        Ok(v) => v,
-        Err(_) => {
-            return Ok(ok(TestModelResult {
-                success: true,
-                message: "请求成功（非 JSON 响应）".into(),
-                response_text: Some(resp_body.chars().take(200).collect()),
-                duration_ms: Some(duration),
-                error: None,
-            }));
-        }
-    };
-
-    let parser = get_parser(&route.target_format);
-    let response_text = match parser.parse_response(&resp_value) {
-        Ok(ir_resp) => {
-            let mut text_parts: Vec<String> = Vec::new();
-            for part in &ir_resp.message.content {
-                if let IrContentPart::Text { text } = part {
-                    text_parts.push(text.clone());
+    let response_text = if resp_body.starts_with("data:") || resp_body.starts_with("event:") {
+        // SSE streaming response — extract text from delta events
+        extract_text_from_sse(&resp_body, &route.target_format)
+    } else if let Ok(resp_value) = serde_json::from_str::<serde_json::Value>(&resp_body) {
+        // Non-streaming JSON response (fallback)
+        let parser = get_parser(&route.target_format);
+        match parser.parse_response(&resp_value) {
+            Ok(ir_resp) => {
+                let mut text_parts: Vec<String> = Vec::new();
+                for part in &ir_resp.message.content {
+                    if let IrContentPart::Text { text } = part {
+                        text_parts.push(text.clone());
+                    }
                 }
+                if text_parts.is_empty() { None } else { Some(text_parts.join("")) }
             }
-            if text_parts.is_empty() { None } else { Some(text_parts.join("")) }
+            Err(_) => Some(resp_body.chars().take(200).collect()),
         }
-        Err(_) => {
-            Some(resp_body.chars().take(200).collect())
-        }
+    } else {
+        Some(resp_body.chars().take(200).collect())
     };
 
     let _ = log_request(
@@ -837,6 +831,53 @@ async fn test_model(
         duration_ms: Some(duration),
         error: None,
     }))
+}
+
+/// Extract concatenated text from SSE streaming response.
+/// Handles Anthropic, OpenAI, and Gemini SSE event formats.
+fn extract_text_from_sse(resp_body: &str, format: &ClientFormat) -> Option<String> {
+    let mut text_parts: Vec<String> = Vec::new();
+
+    for line in resp_body.lines() {
+        let data = if let Some(d) = line.strip_prefix("data:") {
+            d.trim()
+        } else {
+            continue;
+        };
+
+        if data == "[DONE]" || data.is_empty() {
+            continue;
+        }
+
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+            continue;
+        };
+
+        match format {
+            ClientFormat::Anthropic => {
+                // Anthropic SSE: {"type":"content_block_delta","delta":{"type":"text_delta","text":"..."}}
+                if json.get("type").and_then(|v| v.as_str()) == Some("content_block_delta") {
+                    if let Some(text) = json.pointer("/delta/text").and_then(|v| v.as_str()) {
+                        text_parts.push(text.to_string());
+                    }
+                }
+            }
+            ClientFormat::Completions | ClientFormat::Responses => {
+                // OpenAI SSE: {"choices":[{"delta":{"content":"..."}}]}
+                if let Some(content) = json.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
+                    text_parts.push(content.to_string());
+                }
+            }
+            ClientFormat::Gemini => {
+                // Gemini SSE: {"candidates":[{"content":{"parts":[{"text":"..."}]}}]}
+                if let Some(text) = json.pointer("/candidates/0/content/parts/0/text").and_then(|v| v.as_str()) {
+                    text_parts.push(text.to_string());
+                }
+            }
+        }
+    }
+
+    if text_parts.is_empty() { None } else { Some(text_parts.join("")) }
 }
 
 // --- Runtime log handlers ---

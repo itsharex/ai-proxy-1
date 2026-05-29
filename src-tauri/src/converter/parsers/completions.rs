@@ -189,6 +189,7 @@ impl FormatParser for CompletionsParser {
             frequency_penalty: body.get("frequency_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
             seed: body.get("seed").and_then(|v| v.as_u64()),
             thinking,
+            stream_options: body.get("stream_options").cloned(),
             metadata,
             extra: std::collections::HashMap::new(),
         })
