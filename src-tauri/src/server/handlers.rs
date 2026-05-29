@@ -1100,9 +1100,19 @@ async fn handle_proxy(
                     }
 
                     // Other formats (Completions, Gemini): delegate to generator
+                    if !started {
+                        started = true;
+                    }
                     let sse_data = client_generator.generate_stream_chunk(&ir_chunk);
                     if !sse_data.is_empty() {
                         yield Ok::<_, std::convert::Infallible>(Bytes::from(sse_data));
+                    }
+                    if ir_chunk.finish_reason.is_some() && !finished {
+                        // Send [DONE] marker for Completions format
+                        if matches!(client_format, ClientFormat::Completions) {
+                            yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
+                        }
+                        finished = true;
                     }
                 }
             }

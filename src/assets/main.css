@@ -12,3 +12,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* 禁止输入框自动大写 */
+input, textarea, [contenteditable="true"] {
+  text-transform: none;
+  -webkit-text-transform: none;
+}
