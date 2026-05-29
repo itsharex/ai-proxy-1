@@ -569,9 +569,21 @@ async fn handle_proxy(
                     };
 
                     if let Some(usage) = &ir_chunk.usage {
-                        total_prompt += usage.prompt_tokens;
-                        total_completion += usage.completion_tokens;
-                        total_cached += usage.cached_tokens;
+                        // Upstream APIs report cumulative (not incremental) usage:
+                        // - Anthropic: message_start has input+cached, message_delta has output
+                        // - OpenAI: only the final chunk carries usage (full totals)
+                        // - Gemini: each chunk carries cumulative totals
+                        // - Responses: response.completed carries full totals
+                        // Use "latest non-zero" instead of accumulation to avoid double-counting.
+                        if usage.prompt_tokens > 0 {
+                            total_prompt = usage.prompt_tokens;
+                        }
+                        if usage.completion_tokens > 0 {
+                            total_completion = usage.completion_tokens;
+                        }
+                        if usage.cached_tokens > 0 {
+                            total_cached = usage.cached_tokens;
+                        }
                         stream_state_ref.prompt_tokens.store(total_prompt, Ordering::SeqCst);
                         stream_state_ref.completion_tokens.store(total_completion, Ordering::SeqCst);
                         stream_state_ref.cached_tokens.store(total_cached, Ordering::SeqCst);

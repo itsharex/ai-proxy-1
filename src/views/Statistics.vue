@@ -104,7 +104,8 @@ const summaryColumns = [
     width: 110,
     render: (row: UsageStat) => {
       if (row.prompt_tokens === 0) return '-'
-      return `${((row.cached_tokens / row.prompt_tokens) * 100).toFixed(1)}%`
+      const rate = Math.min((row.cached_tokens / row.prompt_tokens) * 100, 100)
+      return `${rate.toFixed(1)}%`
     },
   },
   {
