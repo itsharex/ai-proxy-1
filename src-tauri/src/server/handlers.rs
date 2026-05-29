@@ -391,10 +391,48 @@ async fn handle_proxy(
             }
         };
 
-        let resp_value: Value = match serde_json::from_slice(&resp_body) {
-            Ok(v) => v,
-            Err(e) => {
-                return ProxyError::Parse(format!("invalid response JSON: {}", e)).into_response();
+        if resp_body.is_empty() {
+            tracing::error!("Upstream returned empty body with status {}", status);
+            return ProxyError::Parse("upstream returned empty response body".into()).into_response();
+        }
+
+        // Handle upstream returning SSE despite stream:false (e.g. provider bugs)
+        let resp_body_str = String::from_utf8_lossy(&resp_body);
+        let resp_value: Value = if resp_body_str.starts_with("data:") || resp_body_str.starts_with("event:") {
+            // Upstream returned SSE — parse it as a streaming response and extract text
+            tracing::warn!("Upstream returned SSE for non-streaming request, parsing as stream");
+            let text = extract_text_from_sse_body(&resp_body_str, &route.target_format);
+            // Build a minimal valid response in the upstream format
+            match route.target_format {
+                ClientFormat::Anthropic => {
+                    serde_json::json!({
+                        "id": "msg-proxy-fallback",
+                        "type": "message",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": text.unwrap_or_default()}],
+                        "model": target_model,
+                        "stop_reason": "end_turn",
+                        "usage": {"input_tokens": 0, "output_tokens": 0}
+                    })
+                }
+                _ => {
+                    serde_json::json!({
+                        "id": "chatcmpl-proxy-fallback",
+                        "object": "chat.completion",
+                        "choices": [{"index": 0, "message": {"role": "assistant", "content": text.unwrap_or_default()}, "finish_reason": "stop"}],
+                        "model": target_model,
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0}
+                    })
+                }
+            }
+        } else {
+            match serde_json::from_slice(&resp_body) {
+                Ok(v) => v,
+                Err(e) => {
+                    let preview: String = resp_body_str.chars().take(200).collect();
+                    tracing::error!("Invalid response JSON: {} | body preview: {}", e, preview);
+                    return ProxyError::Parse(format!("invalid response JSON: {}", e)).into_response();
+                }
             }
         };
 
@@ -1513,6 +1551,41 @@ fn get_parser(format: &ClientFormat) -> Box<dyn FormatParser> {
         ClientFormat::Anthropic => Box::new(AnthropicParser),
         ClientFormat::Gemini => Box::new(GeminiParser),
     }
+}
+
+/// Extract concatenated text from an SSE response body.
+fn extract_text_from_sse_body(body: &str, format: &ClientFormat) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for line in body.lines() {
+        let data = match line.strip_prefix("data:") {
+            Some(d) => d.trim(),
+            None => continue,
+        };
+        if data == "[DONE]" || data.is_empty() {
+            continue;
+        }
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+        match format {
+            ClientFormat::Anthropic => {
+                if json.get("type").and_then(|v| v.as_str()) == Some("content_block_delta") {
+                    if let Some(t) = json.pointer("/delta/text").and_then(|v| v.as_str()) {
+                        parts.push(t.to_string());
+                    }
+                }
+            }
+            ClientFormat::Completions | ClientFormat::Responses => {
+                if let Some(c) = json.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
+                    parts.push(c.to_string());
+                }
+            }
+            ClientFormat::Gemini => {
+                if let Some(t) = json.pointer("/candidates/0/content/parts/0/text").and_then(|v| v.as_str()) {
+                    parts.push(t.to_string());
+                }
+            }
+        }
+    }
+    if parts.is_empty() { None } else { Some(parts.join("")) }
 }
 
 fn get_generator(format: &ClientFormat) -> Box<dyn FormatGenerator> {
