@@ -211,6 +211,7 @@ impl FormatParser for GeminiParser {
             delta_thinking: None,
             finish_reason,
             usage,
+            error: None,
         }))
     }
 

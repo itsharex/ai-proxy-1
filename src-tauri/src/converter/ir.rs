@@ -74,6 +74,12 @@ pub struct IrToolCall {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IrStreamError {
+    pub code: Option<String>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IrStreamChunk {
     pub id: Option<String>,
     pub model: Option<String>,
@@ -82,6 +88,8 @@ pub struct IrStreamChunk {
     pub delta_thinking: Option<String>,
     pub finish_reason: Option<String>,
     pub usage: Option<IrUsage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<IrStreamError>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

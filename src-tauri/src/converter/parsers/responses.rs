@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::converter::ir::{
-    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
+    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrStreamError, IrTool,
     IrToolCall, IrToolCallDelta, IrUsage, IrThinkingConfig,
 };
 use crate::converter::FormatParser;
@@ -164,6 +164,7 @@ impl FormatParser for ResponsesParser {
                     delta_thinking: None,
                     finish_reason: None,
                     usage: None,
+                    error: None,
                 }))
             }
             "response.function_call_arguments.delta" => {
@@ -181,6 +182,7 @@ impl FormatParser for ResponsesParser {
                     delta_thinking: None,
                     finish_reason: None,
                     usage: None,
+                    error: None,
                 }))
             }
             "response.output_item.added" => {
@@ -203,6 +205,7 @@ impl FormatParser for ResponsesParser {
                         delta_thinking: None,
                         finish_reason: None,
                         usage: None,
+                        error: None,
                     }));
                 }
 
@@ -230,6 +233,7 @@ impl FormatParser for ResponsesParser {
                         delta_thinking: None,
                         finish_reason: None,
                         usage: None,
+                        error: None,
                     }));
                 }
 
@@ -257,6 +261,44 @@ impl FormatParser for ResponsesParser {
                     delta_thinking: None,
                     finish_reason: Some("completed".to_string()),
                     usage,
+                    error: None,
+                }))
+            }
+            "response.failed" => {
+                let response_obj = &event["response"];
+                let error_obj = &event["error"];
+                let error_message = error_obj["message"]
+                    .as_str()
+                    .unwrap_or("upstream response failed")
+                    .to_string();
+                let error_code = error_obj["code"]
+                    .as_str()
+                    .map(String::from);
+
+                let usage = response_obj.get("usage").and_then(|u| {
+                    Some(IrUsage {
+                        prompt_tokens: u["input_tokens"].as_u64()? as u32,
+                        completion_tokens: u["output_tokens"].as_u64()? as u32,
+                        total_tokens: u["input_tokens"].as_u64()? as u32
+                            + u["output_tokens"].as_u64()? as u32,
+                        cached_tokens: u.get("input_tokens_details")
+                            .and_then(|d| d["cached_tokens"].as_u64())
+                            .unwrap_or(0) as u32,
+                    })
+                });
+
+                Ok(Some(IrStreamChunk {
+                    id: response_obj["id"].as_str().map(String::from),
+                    model: response_obj["model"].as_str().map(String::from),
+                    delta_content: None,
+                    delta_tool_calls: None,
+                    delta_thinking: None,
+                    finish_reason: Some("failed".to_string()),
+                    usage,
+                    error: Some(IrStreamError {
+                        code: error_code,
+                        message: error_message,
+                    }),
                 }))
             }
             _ => Ok(None),

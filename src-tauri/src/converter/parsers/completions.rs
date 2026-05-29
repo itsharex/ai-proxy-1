@@ -208,6 +208,7 @@ impl FormatParser for CompletionsParser {
                 delta_thinking: None,
                 finish_reason: Some("stop".into()),
                 usage: None,
+                error: None,
             }));
         }
         let chunk: Value = serde_json::from_str(data)
@@ -242,6 +243,7 @@ impl FormatParser for CompletionsParser {
                     .and_then(|d| d["cached_tokens"].as_u64())
                     .unwrap_or(0) as u32,
             }),
+            error: None,
         }))
     }
 

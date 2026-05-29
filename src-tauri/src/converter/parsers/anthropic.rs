@@ -164,6 +164,7 @@ impl FormatParser for AnthropicParser {
                             delta_thinking: None,
                             finish_reason: None,
                             usage: None,
+                            error: None,
                         }))
                     }
                     "input_json_delta" => {
@@ -182,6 +183,7 @@ impl FormatParser for AnthropicParser {
                             delta_thinking: None,
                             finish_reason: None,
                             usage: None,
+                            error: None,
                         }))
                     }
                     "thinking_delta" => {
@@ -194,6 +196,7 @@ impl FormatParser for AnthropicParser {
                             delta_thinking: Some(text.to_string()),
                             finish_reason: None,
                             usage: None,
+                            error: None,
                         }))
                     }
                     _ => Ok(None),
@@ -221,6 +224,7 @@ impl FormatParser for AnthropicParser {
                         delta_thinking: None,
                         finish_reason: None,
                         usage: None,
+                        error: None,
                     }));
                 }
 
@@ -260,6 +264,7 @@ impl FormatParser for AnthropicParser {
                     delta_thinking: None,
                     finish_reason: stop_reason,
                     usage,
+                    error: None,
                 }))
             }
             "message_start" => {
@@ -290,6 +295,7 @@ impl FormatParser for AnthropicParser {
                     delta_thinking: None,
                     finish_reason: None,
                     usage,
+                    error: None,
                 }))
             }
             "message_stop" => Ok(Some(IrStreamChunk {
@@ -300,6 +306,7 @@ impl FormatParser for AnthropicParser {
                 delta_thinking: None,
                 finish_reason: Some("stop".to_string()),
                 usage: None,
+                error: None,
             })),
             _ => Ok(None),
         }

@@ -1038,7 +1038,90 @@ async fn handle_proxy(
                             continue;
                         }
 
-                        // Finish
+                        // Handle upstream failure
+                        if ir_chunk.finish_reason.as_deref() == Some("failed") {
+                            if resp_text_part_open {
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", serde_json::json!({
+                                        "type": "response.output_text.done",
+                                        "output_index": resp_output_index - 1,
+                                        "content_index": 0,
+                                        "text": resp_accumulated_text,
+                                    }))
+                                ));
+                                resp_text_part_open = false;
+                            }
+                            if resp_message_open {
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", serde_json::json!({
+                                        "type": "response.output_item.done",
+                                        "output_index": resp_output_index - 1,
+                                        "item": {
+                                            "type": "message",
+                                            "id": "msg_proxy",
+                                            "role": "assistant",
+                                            "content": [{"type": "output_text", "text": resp_accumulated_text}],
+                                            "status": "incomplete",
+                                        }
+                                    }))
+                                ));
+                                resp_message_open = false;
+                            }
+                            if resp_func_open {
+                                yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                    format!("data: {}\n\n", serde_json::json!({
+                                        "type": "response.output_item.done",
+                                        "output_index": resp_output_index - 1,
+                                        "item": {
+                                            "type": "function_call",
+                                            "id": format!("fc_{}", resp_call_id),
+                                            "call_id": resp_call_id,
+                                            "name": resp_func_name,
+                                            "arguments": resp_accumulated_args,
+                                            "status": "incomplete",
+                                        }
+                                    }))
+                                ));
+                                resp_func_open = false;
+                            }
+
+                            let err_code = ir_chunk.error.as_ref()
+                                .and_then(|e| e.code.clone())
+                                .unwrap_or_else(|| "server_error".to_string());
+                            let err_message = ir_chunk.error.as_ref()
+                                .map(|e| e.message.clone())
+                                .unwrap_or_else(|| "upstream response failed".to_string());
+
+                            let failed_event = serde_json::json!({
+                                "type": "response.failed",
+                                "response": {
+                                    "id": response_id,
+                                    "object": "response",
+                                    "status": "failed",
+                                    "model": model_name,
+                                    "output": build_responses_output_array(
+                                        &resp_accumulated_text,
+                                        &resp_accumulated_reasoning,
+                                        resp_thinking_started,
+                                        resp_func_open,
+                                        &resp_call_id,
+                                        &resp_func_name,
+                                        &resp_accumulated_args,
+                                    ),
+                                },
+                                "error": {
+                                    "code": err_code,
+                                    "message": err_message,
+                                }
+                            });
+                            yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                format!("data: {}\n\n", failed_event)
+                            ));
+                            finished = true;
+                            continue;
+                        }
+
+                        // Finish (normal completion)
                         if ir_chunk.finish_reason.is_some() {
                             // Close reasoning summary if still open
                             if let Some(done_sse) = close_responses_thinking_if_needed(
@@ -1111,7 +1194,15 @@ async fn handle_proxy(
                                     "object": "response",
                                     "status": "completed",
                                     "model": model_name,
-                                    "output": [],
+                                    "output": build_responses_output_array(
+                                        &resp_accumulated_text,
+                                        &resp_accumulated_reasoning,
+                                        resp_thinking_started,
+                                        resp_func_open,
+                                        &resp_call_id,
+                                        &resp_func_name,
+                                        &resp_accumulated_args,
+                                    ),
                                     "usage": {
                                         "input_tokens": total_prompt,
                                         "output_tokens": total_completion,
@@ -1173,15 +1264,53 @@ async fn handle_proxy(
                                     if usage.completion_tokens > 0 { total_completion = usage.completion_tokens; }
                                     if usage.cached_tokens > 0 { total_cached = usage.cached_tokens; }
                                 }
-                                let sse_data = client_generator.generate_stream_chunk(&ir_chunk);
-                                if !sse_data.is_empty() {
-                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(sse_data));
-                                }
-                                if ir_chunk.finish_reason.is_some() {
-                                    if matches!(client_format, ClientFormat::Completions) {
-                                        yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
+                                if is_responses {
+                                    // For Responses format, only handle finish events from remaining buffer
+                                    if ir_chunk.finish_reason.as_deref() == Some("failed") {
+                                        let err_code = ir_chunk.error.as_ref()
+                                            .and_then(|e| e.code.clone())
+                                            .unwrap_or_else(|| "server_error".to_string());
+                                        let err_message = ir_chunk.error.as_ref()
+                                            .map(|e| e.message.clone())
+                                            .unwrap_or_else(|| "upstream response failed".to_string());
+                                        let failed_event = serde_json::json!({
+                                            "type": "response.failed",
+                                            "response": {
+                                                "id": response_id,
+                                                "object": "response",
+                                                "status": "failed",
+                                                "model": model_name,
+                                                "output": build_responses_output_array(
+                                                    &resp_accumulated_text,
+                                                    &resp_accumulated_reasoning,
+                                                    resp_thinking_started,
+                                                    resp_func_open,
+                                                    &resp_call_id,
+                                                    &resp_func_name,
+                                                    &resp_accumulated_args,
+                                                ),
+                                            },
+                                            "error": {
+                                                "code": err_code,
+                                                "message": err_message,
+                                            }
+                                        });
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                                            format!("data: {}\n\n", failed_event)
+                                        ));
+                                        finished = true;
                                     }
-                                    finished = true;
+                                } else {
+                                    let sse_data = client_generator.generate_stream_chunk(&ir_chunk);
+                                    if !sse_data.is_empty() {
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from(sse_data));
+                                    }
+                                    if ir_chunk.finish_reason.is_some() {
+                                        if matches!(client_format, ClientFormat::Completions) {
+                                            yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
+                                        }
+                                        finished = true;
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -1223,6 +1352,17 @@ async fn handle_proxy(
                     ));
                 }
                 if resp_message_open {
+                    if resp_text_part_open {
+                        yield Ok::<_, std::convert::Infallible>(Bytes::from(
+                            format!("data: {}\n\n", serde_json::json!({
+                                "type": "response.output_text.done",
+                                "output_index": resp_output_index - 1,
+                                "content_index": 0,
+                                "text": resp_accumulated_text,
+                            }))
+                        ));
+                        resp_text_part_open = false;
+                    }
                     yield Ok::<_, std::convert::Infallible>(Bytes::from(
                         format!("data: {}\n\n", serde_json::json!({
                             "type": "response.output_item.done",
@@ -1232,10 +1372,11 @@ async fn handle_proxy(
                                 "id": "msg_proxy",
                                 "role": "assistant",
                                 "content": [{"type": "output_text", "text": resp_accumulated_text}],
-                                "status": "completed",
+                                "status": "incomplete",
                             }
                         }))
                     ));
+                    resp_message_open = false;
                 }
             }
 
@@ -1253,8 +1394,31 @@ async fn handle_proxy(
                         ));
                     }
                     ClientFormat::Responses => {
+                        let failed_output = build_responses_output_array(
+                            &resp_accumulated_text,
+                            &resp_accumulated_reasoning,
+                            resp_thinking_started,
+                            resp_func_open,
+                            &resp_call_id,
+                            &resp_func_name,
+                            &resp_accumulated_args,
+                        );
+                        let failed_event = serde_json::json!({
+                            "type": "response.failed",
+                            "response": {
+                                "id": response_id,
+                                "object": "response",
+                                "status": "failed",
+                                "model": model_name,
+                                "output": failed_output,
+                            },
+                            "error": {
+                                "code": "server_error",
+                                "message": "stream disconnected before completion",
+                            }
+                        });
                         yield Ok::<_, std::convert::Infallible>(Bytes::from(
-                            format!("data: {{\"type\": \"response.failed\", \"error\": {{\"message\": \"stream interrupted by proxy\"}}}}\n\n")
+                            format!("data: {}\n\n", failed_event)
                         ));
                     }
                 }
@@ -1603,6 +1767,48 @@ fn close_responses_thinking_if_needed(
         "response_id": response_id,
     });
     Some(format!("data: {}\n\n", done_event))
+}
+
+fn build_responses_output_array(
+    accumulated_text: &str,
+    accumulated_reasoning: &str,
+    reasoning_started: bool,
+    func_open: bool,
+    call_id: &str,
+    func_name: &str,
+    accumulated_args: &str,
+) -> Vec<serde_json::Value> {
+    let mut output: Vec<serde_json::Value> = Vec::new();
+
+    if reasoning_started && !accumulated_reasoning.is_empty() {
+        output.push(serde_json::json!({
+            "type": "reasoning",
+            "id": "rs_proxy",
+            "summary": [{"type": "summary_text", "text": accumulated_reasoning}],
+        }));
+    }
+
+    if !accumulated_text.is_empty() {
+        output.push(serde_json::json!({
+            "type": "message",
+            "id": "msg_proxy",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": accumulated_text}],
+            "status": "completed",
+        }));
+    }
+
+    if func_open && !call_id.is_empty() {
+        output.push(serde_json::json!({
+            "type": "function_call",
+            "id": format!("fc_{}", call_id),
+            "call_id": call_id,
+            "name": func_name,
+            "arguments": accumulated_args,
+        }));
+    }
+
+    output
 }
 
 fn inject_cached_reasoning_into_assistant_messages(
