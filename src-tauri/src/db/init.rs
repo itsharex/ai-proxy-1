@@ -109,6 +109,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 009: drop usage_stats table");
     }
 
+    // Migration 010: add endpoint_path column to providers
+    let has_endpoint_path: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('providers') WHERE name = 'endpoint_path'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_endpoint_path {
+        let migration10 = include_str!("../../migrations/010_add_endpoint_path.sql");
+        sqlx::query(migration10).execute(pool).await?;
+        info!("Applied migration 010: add endpoint_path column");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }

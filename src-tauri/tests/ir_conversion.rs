@@ -288,6 +288,21 @@ fn invalid_json_schema_response_format_is_downgraded() {
 }
 
 #[test]
+fn responses_stream_field_roundtrip() {
+    let mut ir = sample_ir_request();
+    ir.stream = true;
+
+    let generator = ResponsesGenerator;
+    let body = generator.generate_request(&ir).unwrap();
+
+    assert_eq!(body["stream"].as_bool(), Some(true));
+
+    let parser = ResponsesParser;
+    let parsed = parser.parse_request(&body).unwrap();
+    assert!(parsed.stream);
+}
+
+#[test]
 fn responses_parser_json_schema_roundtrip_to_completions() {
     let parser = ResponsesParser;
     let generator = CompletionsGenerator;

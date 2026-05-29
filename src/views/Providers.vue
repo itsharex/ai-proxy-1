@@ -44,6 +44,13 @@
             placeholder="选择格式"
           />
         </n-form-item>
+        <n-form-item label="Endpoint">
+          <n-input
+            v-model:value="form.endpoint_path"
+            placeholder="留空使用默认路径，例如: /chat/completions"
+            :input-props="{ autocapitalize: 'off' }"
+          />
+        </n-form-item>
         <n-form-item label="API Key" :required="!isEditing">
           <n-input
             v-model:value="form.api_key"
@@ -81,6 +88,54 @@
         </n-space>
       </n-form>
     </n-modal>
+
+    <n-modal
+      v-model:show="showTestModal"
+      preset="card"
+      :title="`测试模型 - ${testProviderName}`"
+      style="width: 600px"
+    >
+      <n-spin :show="testing">
+        <template v-if="testResult">
+          <n-result :status="testResult.success ? 'success' : 'error'"
+            :title="testResult.message"
+          >
+            <template #footer>
+              <n-descriptions label-placement="left" bordered :column="1" size="small">
+                <n-descriptions-item v-if="testResult.duration_ms != null" label="响应时间">
+                  {{ testResult.duration_ms }}ms
+                </n-descriptions-item>
+                <n-descriptions-item v-if="testResult.response_text" label="模型回复">
+                  {{ testResult.response_text }}
+                </n-descriptions-item>
+                <n-descriptions-item v-if="testResult.error" label="错误信息">
+                  <n-text type="error">{{ testResult.error }}</n-text>
+                </n-descriptions-item>
+              </n-descriptions>
+            </template>
+          </n-result>
+        </template>
+        <n-space vertical v-if="testModels.length > 0">
+          <div
+            v-for="m in testModels"
+            :key="m.model_name"
+            style="display: flex; align-items: center; gap: 8px"
+          >
+            <n-tag size="small" style="min-width: 120px">{{ m.model_name }}</n-tag>
+            <n-button
+              size="small"
+              type="primary"
+              secondary
+              :loading="testingModel === m.model_name"
+              @click="handleTestModel(m.model_name)"
+            >
+              测试
+            </n-button>
+          </div>
+        </n-space>
+        <n-empty v-else description="该供应商暂无模型" />
+      </n-spin>
+    </n-modal>
   </n-space>
 </template>
 
@@ -90,6 +145,14 @@ import { NTag, NPopconfirm, NButton, NSpace, useMessage } from 'naive-ui'
 import { api } from '../api'
 import type { Provider } from '../types'
 
+interface TestResult {
+  success: boolean
+  message: string
+  response_text: string | null
+  duration_ms: number | null
+  error: string | null
+}
+
 const message = useMessage()
 const loading = ref(false)
 const providers = ref<Provider[]>([])
@@ -98,10 +161,18 @@ const isEditing = ref(false)
 const editingId = ref('')
 const modalLoading = ref(false)
 
+const showTestModal = ref(false)
+const testProviderName = ref('')
+const testModels = ref<Array<{ model_name: string }>>([])
+const testing = ref(false)
+const testingModel = ref('')
+const testResult = ref<TestResult | null>(null)
+
 const form = ref({
   name: '',
   base_url: '',
   format: 'completions' as string,
+  endpoint_path: '',
   api_key: '',
   models: [] as Array<{ model_name: string }>,
 })
@@ -140,9 +211,14 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 180,
+    width: 220,
     render: (row: Provider) =>
       h(NSpace, { size: 4 }, () => [
+        h(
+          NButton,
+          { size: 'small', quaternary: true, type: 'info', onClick: () => openTestModal(row) },
+          () => '测试'
+        ),
         h(
           NButton,
           { size: 'small', quaternary: true, type: 'primary', onClick: () => openEditModal(row) },
@@ -179,6 +255,7 @@ function openCreateModal() {
     name: '',
     base_url: '',
     format: 'completions',
+    endpoint_path: '',
     api_key: '',
     models: [],
   }
@@ -192,12 +269,45 @@ function openEditModal(row: Provider) {
     name: row.name,
     base_url: row.base_url,
     format: row.format,
+    endpoint_path: row.endpoint_path || '',
     api_key: '',
     models: row.models.map((m) => ({
       model_name: m.model_name,
     })),
   }
   showModal.value = true
+}
+
+function openTestModal(row: Provider) {
+  testProviderName.value = row.name
+  testModels.value = row.models.map((m) => ({ model_name: m.model_name }))
+  testResult.value = null
+  testingModel.value = ''
+  showTestModal.value = true
+}
+
+async function handleTestModel(modelName: string) {
+  testingModel.value = modelName
+  testResult.value = null
+  testing.value = true
+
+  try {
+    testResult.value = await api<TestResult>('/api/models/test', {
+      method: 'POST',
+      body: JSON.stringify({ model_name: modelName }),
+    })
+  } catch (e) {
+    testResult.value = {
+      success: false,
+      message: '请求失败',
+      response_text: null,
+      duration_ms: null,
+      error: e instanceof Error ? e.message : String(e),
+    }
+  } finally {
+    testing.value = false
+    testingModel.value = ''
+  }
 }
 
 async function handleSubmit() {
@@ -217,6 +327,7 @@ async function handleSubmit() {
         name: form.value.name,
         base_url: form.value.base_url,
         format: form.value.format,
+        endpoint_path: form.value.endpoint_path || null,
         models: form.value.models.map((m) => ({
           model_name: m.model_name,
           target_model: null,
@@ -237,6 +348,7 @@ async function handleSubmit() {
           name: form.value.name,
           base_url: form.value.base_url,
           format: form.value.format,
+          endpoint_path: form.value.endpoint_path || null,
           api_key: form.value.api_key,
           models: form.value.models.map((m) => ({
             model_name: m.model_name,

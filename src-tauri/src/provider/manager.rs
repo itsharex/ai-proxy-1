@@ -21,6 +21,7 @@ struct DbProvider {
     name: String,
     base_url: String,
     format: String,
+    endpoint_path: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -49,7 +50,7 @@ impl ProviderManager {
     pub async fn list() -> Result<Vec<Provider>, crate::error::ProxyError> {
         let pool = get_pool().await;
         let db_providers: Vec<DbProvider> =
-            sqlx::query_as("SELECT id, name, base_url, format FROM providers ORDER BY name")
+            sqlx::query_as("SELECT id, name, base_url, format, endpoint_path FROM providers ORDER BY name")
                 .fetch_all(pool)
                 .await
                 .map_err(|e| crate::error::ProxyError::Database(e))?;
@@ -63,6 +64,7 @@ impl ProviderManager {
                 name: p.name,
                 base_url: p.base_url,
                 format: p.format,
+                endpoint_path: p.endpoint_path,
                 models,
                 api_keys,
             });
@@ -74,7 +76,7 @@ impl ProviderManager {
     pub async fn get_by_id(provider_id: &str) -> Result<Provider, crate::error::ProxyError> {
         let pool = get_pool().await;
         let p: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, format FROM providers WHERE id = ?",
+            "SELECT id, name, base_url, format, endpoint_path FROM providers WHERE id = ?",
         )
         .bind(provider_id)
         .fetch_one(pool)
@@ -89,6 +91,7 @@ impl ProviderManager {
             name: p.name,
             base_url: p.base_url,
             format: p.format,
+            endpoint_path: p.endpoint_path,
             models,
             api_keys,
         })
@@ -111,7 +114,7 @@ impl ProviderManager {
 
         let pool = get_pool().await;
         let provider: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, format FROM providers WHERE id = ?",
+            "SELECT id, name, base_url, format, endpoint_path FROM providers WHERE id = ?",
         )
         .bind(&matched.provider_id)
         .fetch_one(pool)
@@ -121,7 +124,9 @@ impl ProviderManager {
         let target_model = matched.target_model.clone()
             .unwrap_or_else(|| matched.model_name.clone());
         let target_format = parse_client_format(&provider.format)?;
-        let endpoint_path = default_path_for_format(&target_format, &target_model);
+        let endpoint_path = provider.endpoint_path.map(|p| {
+            if p.starts_with('/') { p } else { format!("/{}", p) }
+        }).unwrap_or_else(|| default_path_for_format(&target_format, &target_model));
 
         info!("Route resolved: {} -> {} ({}) via {}", model, target_model, provider.format, provider.name);
 

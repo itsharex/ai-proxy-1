@@ -65,6 +65,7 @@ impl FormatGenerator for ResponsesGenerator {
         let mut body = json!({
             "model": ir.model,
             "input": input_items,
+            "stream": ir.stream,
         });
 
         if let Some(instructions) = instructions {

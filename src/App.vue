@@ -50,7 +50,6 @@ import UpdateNotification from './components/UpdateNotification.vue'
 import {
   HomeOutline,
   ServerOutline,
-  GitBranchOutline,
   DocumentTextOutline,
   TerminalOutline,
   BarChartOutline,
@@ -86,11 +85,11 @@ function renderIcon(icon: typeof HomeOutline) {
 const menuOptions = [
   { label: '仪表盘', key: '/', icon: renderIcon(HomeOutline) },
   { label: '供应商', key: '/providers', icon: renderIcon(ServerOutline) },
-  { label: '模型总览', key: '/models', icon: renderIcon(GitBranchOutline) },
-  { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
-  { label: '运行日志', key: '/runtime-logs', icon: renderIcon(TerminalOutline) },
-  { label: '用量统计', key: '/statistics', icon: renderIcon(BarChartOutline) },
   { label: '应用管理', key: '/apps', icon: renderIcon(AppsOutline) },
+  { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
+  { label: '用量统计', key: '/statistics', icon: renderIcon(BarChartOutline) },
+  { label: '运行日志', key: '/runtime-logs', icon: renderIcon(TerminalOutline) },
+  { label: '拦截规则', key: '/rules', icon: renderIcon(SettingsOutline) },
   { label: '设置', key: '/settings', icon: renderIcon(SettingsOutline) },
 ]
 

@@ -6,6 +6,7 @@ pub struct Provider {
     pub name: String,
     pub base_url: String,
     pub format: String,
+    pub endpoint_path: Option<String>,
     pub models: Vec<ProviderModel>,
     pub api_keys: Vec<ApiKeyInfo>,
 }

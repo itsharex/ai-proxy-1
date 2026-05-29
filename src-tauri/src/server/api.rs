@@ -65,6 +65,7 @@ struct CreateProviderBody {
     name: String,
     base_url: String,
     format: String,
+    endpoint_path: Option<String>,
     api_key: String,
     models: Vec<ModelInput>,
 }
@@ -81,8 +82,8 @@ async fn create_provider(
     let pool = get_pool().await;
     let id = uuid::Uuid::new_v4().to_string();
 
-    sqlx::query("INSERT INTO providers (id, name, base_url, format) VALUES (?, ?, ?, ?)")
-        .bind(&id).bind(&body.name).bind(&body.base_url).bind(&body.format)
+    sqlx::query("INSERT INTO providers (id, name, base_url, format, endpoint_path) VALUES (?, ?, ?, ?, ?)")
+        .bind(&id).bind(&body.name).bind(&body.base_url).bind(&body.format).bind(&body.endpoint_path)
         .execute(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     for m in &body.models {
@@ -106,6 +107,7 @@ struct UpdateProviderBody {
     name: Option<String>,
     base_url: Option<String>,
     format: Option<String>,
+    endpoint_path: Option<Option<String>>,
     api_key: Option<String>,
     models: Option<Vec<ModelInput>>,
 }
@@ -116,8 +118,8 @@ async fn update_provider(
 ) -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
     let pool = get_pool().await;
 
-    let current: (String, String, String) = sqlx::query_as(
-        "SELECT name, base_url, format FROM providers WHERE id = ?",
+    let current: (String, String, String, Option<String>) = sqlx::query_as(
+        "SELECT name, base_url, format, endpoint_path FROM providers WHERE id = ?",
     )
     .bind(&id)
     .fetch_one(pool)
@@ -127,9 +129,10 @@ async fn update_provider(
     let name = body.name.unwrap_or(current.0);
     let base_url = body.base_url.unwrap_or(current.1);
     let format = body.format.unwrap_or(current.2);
+    let endpoint_path = body.endpoint_path.unwrap_or(current.3);
 
-    sqlx::query("UPDATE providers SET name = ?, base_url = ?, format = ?, updated_at = datetime('now') WHERE id = ?")
-        .bind(&name).bind(&base_url).bind(&format).bind(&id)
+    sqlx::query("UPDATE providers SET name = ?, base_url = ?, format = ?, endpoint_path = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(&name).bind(&base_url).bind(&format).bind(&endpoint_path).bind(&id)
         .execute(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     if let Some(models) = body.models {

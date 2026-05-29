@@ -3,6 +3,7 @@ export interface Provider {
   name: string
   base_url: string
   format: 'completions' | 'responses' | 'anthropic' | 'gemini'
+  endpoint_path?: string | null
   models: ProviderModel[]
   api_keys: ApiKeyInfo[]
 }
