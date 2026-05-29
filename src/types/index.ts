@@ -80,12 +80,12 @@ export type RuleCondition =
   | { type: 'always' }
 
 export type RuleAction =
-  | { type: 'replace_model'; new_model: string }
+  | { type: 'replace_model'; model: string }
   | { type: 'set_header'; name: string; value: string }
   | { type: 'remove_header'; name: string }
-  | { type: 'inject_system_prompt'; text: string }
-  | { type: 'override_parameter'; key: string; value: unknown }
-  | { type: 'filter_response'; pattern: string; replacement: string }
+  | { type: 'inject_system_prompt'; prompt: string }
+  | { type: 'override_parameter'; parameter: string; value: unknown }
+  | { type: 'filter_response'; patterns: string[] }
 
 export type AppType = 'codex_cli' | 'codex_desktop' | 'claude_cli' | 'claude_desktop'
 

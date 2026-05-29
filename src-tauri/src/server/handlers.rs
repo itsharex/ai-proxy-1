@@ -13,7 +13,7 @@ use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::stream::StreamExt;
 use serde_json::Value;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::converter::generators::anthropic::AnthropicGenerator;
 use crate::converter::generators::completions::CompletionsGenerator;
@@ -520,26 +520,57 @@ async fn handle_proxy(
             let mut heartbeat_interval = tokio::time::interval(std::time::Duration::from_secs(15));
             heartbeat_interval.tick().await; // skip first immediate tick
 
+            let upstream_idle_timeout = std::time::Duration::from_secs(180);
+            let mut upstream_idle = tokio::time::Instant::now();
+            let mut chunk_count: u64 = 0;
+
             loop {
                 let chunk = tokio::select! {
                     chunk_result = reader.next() => {
                         match chunk_result {
-                            Some(Ok(c)) => c,
+                            Some(Ok(c)) => {
+                                upstream_idle = tokio::time::Instant::now();
+                                c
+                            }
                             Some(Err(e)) => {
-                                error!("Stream error: {}", e);
+                                error!(
+                                    "Stream error after {} chunks, {}s elapsed: {}",
+                                    chunk_count,
+                                    start.elapsed().as_secs(),
+                                    e
+                                );
                                 stream_state_ref.interrupted.store(true, Ordering::SeqCst);
                                 break;
                             }
-                            None => break,
+                            None => {
+                                info!(
+                                    "Stream ended normally after {} chunks, {}s elapsed",
+                                    chunk_count,
+                                    start.elapsed().as_secs()
+                                );
+                                break;
+                            }
                         }
                     }
                     _ = heartbeat_interval.tick() => {
+                        // Check upstream idle timeout
+                        if upstream_idle.elapsed() > upstream_idle_timeout {
+                            error!(
+                                "Upstream stall detected: no data for {}s ({} chunks received, {}s total)",
+                                upstream_idle.elapsed().as_secs(),
+                                chunk_count,
+                                start.elapsed().as_secs()
+                            );
+                            stream_state_ref.interrupted.store(true, Ordering::SeqCst);
+                            break;
+                        }
                         // SSE heartbeat: keep client and intermediaries alive during upstream silence
                         yield Ok::<_, std::convert::Infallible>(Bytes::from(": ping\n\n"));
                         continue;
                     }
                 };
 
+                chunk_count += 1;
                 buffer.extend_from_slice(&chunk);
 
                 while let Some(newline_pos) = buffer.iter().position(|&b| b == b'\n') {
@@ -1125,6 +1156,39 @@ async fn handle_proxy(
                             yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
                         }
                         finished = true;
+                    }
+                }
+            }
+
+            // Process remaining buffer data after stream ended
+            if !buffer.is_empty() {
+                if let Ok(remaining) = std::str::from_utf8(&buffer) {
+                    let trimmed = remaining.trim();
+                    if !trimmed.is_empty() && !finished {
+                        info!("Processing {} bytes remaining in buffer after stream end", buffer.len());
+                        match target_parser.parse_stream_chunk(trimmed) {
+                            Ok(Some(ir_chunk)) => {
+                                if let Some(usage) = &ir_chunk.usage {
+                                    if usage.prompt_tokens > 0 { total_prompt = usage.prompt_tokens; }
+                                    if usage.completion_tokens > 0 { total_completion = usage.completion_tokens; }
+                                    if usage.cached_tokens > 0 { total_cached = usage.cached_tokens; }
+                                }
+                                let sse_data = client_generator.generate_stream_chunk(&ir_chunk);
+                                if !sse_data.is_empty() {
+                                    yield Ok::<_, std::convert::Infallible>(Bytes::from(sse_data));
+                                }
+                                if ir_chunk.finish_reason.is_some() {
+                                    if matches!(client_format, ClientFormat::Completions) {
+                                        yield Ok::<_, std::convert::Infallible>(Bytes::from("data: [DONE]\n\n"));
+                                    }
+                                    finished = true;
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse remaining buffer data: {}", e);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
