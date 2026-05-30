@@ -1442,7 +1442,6 @@ async fn handle_proxy(
                                 "text": resp_accumulated_text,
                             }))
                         ));
-                        resp_text_part_open = false;
                     }
                     yield Ok::<_, std::convert::Infallible>(Bytes::from(
                         format!("data: {}\n\n", serde_json::json!({
@@ -1456,8 +1455,7 @@ async fn handle_proxy(
                                 "status": "incomplete",
                             }
                         }))
-                    ));
-                    resp_message_open = false;
+                    ))
                 }
             }
 
