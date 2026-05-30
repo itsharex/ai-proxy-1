@@ -38,11 +38,41 @@ impl FormatParser for CompletionsParser {
                             Some("text") => Some(IrContentPart::Text {
                                 text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                             }),
-                            Some("image_url") => Some(IrContentPart::Image {
-                                url: p["image_url"].get("url").and_then(|v| v.as_str()).map(String::from),
-                                data: None,
-                                media_type: None,
-                            }),
+                            Some("image_url") => {
+                                let url_str = p["image_url"].get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                if let Some(rest) = url_str.strip_prefix("data:") {
+                                    if let Some(semi) = rest.find(';') {
+                                        let media_type = rest[..semi].to_string();
+                                        let after = &rest[semi + 1..];
+                                        if let Some(comma) = after.find(',') {
+                                            let b64_data = after[comma + 1..].to_string();
+                                            Some(IrContentPart::Image {
+                                                url: None,
+                                                data: Some(b64_data),
+                                                media_type: Some(media_type),
+                                            })
+                                        } else {
+                                            Some(IrContentPart::Image {
+                                                url: Some(url_str.to_string()),
+                                                data: None,
+                                                media_type: None,
+                                            })
+                                        }
+                                    } else {
+                                        Some(IrContentPart::Image {
+                                            url: Some(url_str.to_string()),
+                                            data: None,
+                                            media_type: None,
+                                        })
+                                    }
+                                } else {
+                                    Some(IrContentPart::Image {
+                                        url: Some(url_str.to_string()),
+                                        data: None,
+                                        media_type: None,
+                                    })
+                                }
+                            }
                             Some("refusal") => None,
                             _ => None,
                         })
