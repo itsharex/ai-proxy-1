@@ -35,16 +35,24 @@
         @update:page-size="handlePageSizeChange"
       />
     </n-card>
+    <n-modal v-model:show="showErrorModal" preset="card" title="错误详情" style="width: 600px">
+      <div style="max-height: 50vh; overflow-y: auto">
+        <pre style="white-space: pre-wrap; word-break: break-all; margin: 0; font-family: inherit; font-size: 14px;">{{ errorDetail }}</pre>
+      </div>
+    </n-modal>
   </n-space>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, h } from 'vue'
 import { api } from '../api'
-import { NTag, NSpace, useDialog } from 'naive-ui'
+import { NTag, NSpace, NTooltip, NModal, useDialog } from 'naive-ui'
 import type { RequestLog } from '../types'
 
 const dialog = useDialog()
+
+const showErrorModal = ref(false)
+const errorDetail = ref('')
 
 const loading = ref(false)
 const logs = ref<RequestLog[]>([])
@@ -114,7 +122,11 @@ const columns = [
     width: 80,
     render: (row: RequestLog) => {
       const code = row.status_code ?? 0
-      return h(NTag, { size: 'small', type: statusCodeColor(code) }, () => String(code))
+      const tag = h(NTag, { size: 'small', type: statusCodeColor(code), style: code !== 200 && row.error_message ? 'cursor: pointer' : undefined }, () => String(code))
+      if (code !== 200 && row.error_message) {
+        return h(NTooltip, { trigger: 'hover' }, { trigger: () => h('span', { onClick: () => openErrorDetail(row.error_message!) }, tag), default: () => '点击查看详情' })
+      }
+      return tag
     },
   },
   {
@@ -203,6 +215,11 @@ function formatDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+function openErrorDetail(msg: string) {
+  errorDetail.value = msg
+  showErrorModal.value = true
 }
 
 async function handleClearLogs() {

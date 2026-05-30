@@ -350,7 +350,11 @@ async fn handle_proxy(
         tracing::error!("[ERR] upstream status={} model={}", status_code, target_model);
         error!("Upstream error {}: {}", status_code, body_text);
 
-        let err_msg: String = body_text.chars().take(500).collect();
+        let err_msg = if body_text.trim_start().starts_with("<") {
+            extract_text_from_html(&body_text, 4000)
+        } else {
+            body_text
+        };
         if let Err(le) = log_request_entry(
             &request_id,
             &client_format,
@@ -1728,6 +1732,44 @@ async fn query_model_routes() -> Result<Vec<ModelRouteInfo>, ProxyError> {
             }
         })
         .collect())
+}
+
+fn extract_text_from_html(html: &str, max_len: usize) -> String {
+    let mut text = String::new();
+    let mut in_tag = false;
+    let mut prev_ws = true;
+    for ch in html.chars() {
+        if ch == '<' {
+            in_tag = true;
+            continue;
+        }
+        if ch == '>' {
+            in_tag = false;
+            continue;
+        }
+        if in_tag {
+            continue;
+        }
+        if ch.is_whitespace() {
+            if !prev_ws {
+                text.push(' ');
+            }
+            prev_ws = true;
+        } else {
+            text.push(ch);
+            prev_ws = false;
+        }
+    }
+    let text = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&nbsp;", " ")
+        .replace("&#39;", "'")
+        .trim()
+        .to_string();
+    text.chars().take(max_len).collect()
 }
 
 fn extract_headers(header_map: &axum::http::HeaderMap, headers: &mut HashMap<String, String>) {
