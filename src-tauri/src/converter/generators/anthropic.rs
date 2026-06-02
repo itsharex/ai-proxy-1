@@ -7,14 +7,16 @@ pub struct AnthropicGenerator;
 
 impl FormatGenerator for AnthropicGenerator {
     fn generate_request(&self, ir: &IrRequest) -> Result<Value, ProxyError> {
-        let mut system_text: Option<String> = None;
+        let mut system_parts: Vec<String> = Vec::new();
         let mut messages: Vec<Value> = Vec::new();
 
         for msg in &ir.messages {
             match msg.role {
                 IrRole::System | IrRole::Developer => {
                     let text = extract_text_parts(&msg.content);
-                    system_text = Some(text);
+                    if !text.is_empty() {
+                        system_parts.push(text);
+                    }
                 }
                 _ => {
                     let role_str = match msg.role {
@@ -85,17 +87,22 @@ impl FormatGenerator for AnthropicGenerator {
             "stream": ir.stream,
         });
 
-        if let Some(system) = system_text {
-            body["system"] = json!(system);
+        if !system_parts.is_empty() {
+            body["system"] = json!(system_parts.join("\n\n"));
         }
 
         if let Some(tools) = &ir.tools {
             let tool_defs: Vec<Value> = tools
                 .iter()
                 .map(|t| {
+                    let schema = if t.input_schema.is_null() {
+                        json!({"type": "object"})
+                    } else {
+                        t.input_schema.clone()
+                    };
                     let mut tool = json!({
                         "name": t.name,
-                        "input_schema": t.input_schema,
+                        "input_schema": schema,
                     });
                     if let Some(desc) = &t.description {
                         tool["description"] = json!(desc);
@@ -156,12 +163,18 @@ impl FormatGenerator for AnthropicGenerator {
 
         if let Some(thinking) = &ir.thinking {
             if thinking.enabled {
+                let budget = thinking.budget_tokens.unwrap_or(10000);
                 body["thinking"] = json!({
                     "type": "enabled",
-                    "budget_tokens": thinking.budget_tokens.unwrap_or(10000),
+                    "budget_tokens": budget,
                 });
-                if ir.max_tokens.is_none() {
-                    body["max_tokens"] = json!(16000);
+                let current_max = ir.max_tokens.unwrap_or(4096);
+                if current_max <= budget {
+                    tracing::warn!(
+                        "max_tokens ({}) <= budget_tokens ({}), adjusting to {}",
+                        current_max, budget, budget + 4096
+                    );
+                    body["max_tokens"] = json!(budget + 4096);
                 }
             }
         }

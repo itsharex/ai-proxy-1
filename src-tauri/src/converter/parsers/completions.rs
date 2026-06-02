@@ -1,7 +1,7 @@
 use crate::converter::ir::*;
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 pub struct CompletionsParser;
 
@@ -164,7 +164,7 @@ impl FormatParser for CompletionsParser {
                         Some(IrTool {
                             name: func.get("name")?.as_str()?.to_string(),
                             description: func.get("description").and_then(|v| v.as_str()).map(String::from),
-                            input_schema: func.get("parameters").cloned().unwrap_or(Value::Null),
+                            input_schema: func.get("parameters").cloned().unwrap_or(json!({"type": "object"})),
                             strict: func.get("strict").and_then(|v| v.as_bool()),
                         })
                     })

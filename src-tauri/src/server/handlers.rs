@@ -297,6 +297,7 @@ async fn handle_proxy(
     match route.target_format {
         ClientFormat::Anthropic => {
             req_builder = req_builder.header("x-api-key", &api_key);
+            req_builder = req_builder.header("anthropic-version", "2023-06-01");
         }
         _ => {
             req_builder = req_builder.bearer_auth(&api_key);
