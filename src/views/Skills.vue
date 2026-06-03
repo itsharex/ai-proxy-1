@@ -186,6 +186,62 @@
         />
       </n-spin>
     </n-modal>
+
+    <!-- Marketplace Search Modal -->
+    <n-modal
+      v-model:show="showMarketplaceModal"
+      preset="card"
+      title="从 skills.sh 安装"
+      style="width: 680px"
+      :bordered="false"
+      :segmented="{ content: true }"
+    >
+      <n-space vertical size="medium">
+        <n-space>
+          <n-input
+            v-model:value="marketplaceQuery"
+            placeholder="搜索技能，例如 frontend"
+            clearable
+            style="width: 440px"
+            :input-props="{ autocapitalize: 'off' }"
+            @keyup.enter="handleMarketplaceSearch"
+          />
+          <n-button type="primary" :loading="marketplaceLoading" @click="handleMarketplaceSearch">
+            搜索
+          </n-button>
+        </n-space>
+        <n-spin :show="marketplaceLoading">
+          <div v-if="marketplaceResults.length > 0" style="max-height: 400px; overflow-y: auto;">
+            <n-card
+              v-for="skill in marketplaceResults"
+              :key="skill.id"
+              size="small"
+              hoverable
+              style="margin-bottom: 8px"
+            >
+              <n-space justify="space-between" align="center">
+                <n-space vertical size="small">
+                  <n-text strong>{{ skill.name }}</n-text>
+                  <n-space size="small">
+                    <n-tag size="small" type="info">{{ skill.source }}</n-tag>
+                    <n-text depth="3">{{ formatInstalls(skill.installs) }} 次安装</n-text>
+                  </n-space>
+                </n-space>
+                <n-button
+                  size="small"
+                  type="primary"
+                  :loading="marketplaceInstalling === skill.skillId"
+                  @click="handleMarketplaceInstall(skill)"
+                >
+                  安装
+                </n-button>
+              </n-space>
+            </n-card>
+          </div>
+          <n-empty v-else-if="marketplaceSearched" description="未找到相关技能" />
+        </n-spin>
+      </n-space>
+    </n-modal>
   </n-space>
 </template>
 
@@ -264,7 +320,24 @@ const editMdFullscreen = ref(false)
 const installOptions = [
   { label: '从全局库安装', key: 'global' },
   { label: '从 URL 安装', key: 'url' },
+  { label: '从 skills.sh 安装', key: 'marketplace' },
 ]
+
+// Marketplace Search Modal
+const showMarketplaceModal = ref(false)
+const marketplaceQuery = ref('')
+const marketplaceLoading = ref(false)
+const marketplaceSearched = ref(false)
+const marketplaceResults = ref<MarketplaceSkill[]>([])
+const marketplaceInstalling = ref<string | null>(null)
+
+interface MarketplaceSkill {
+  id: string
+  skillId: string
+  name: string
+  installs: number
+  source: string
+}
 
 // Computed source select options
 const sourceSelectOptions = computed(() =>
@@ -764,7 +837,62 @@ function handleInstallSelect(key: string) {
     openInstallTargetModal(globalSkills[0])
   } else if (key === 'url') {
     openUrlInstallModal()
+  } else if (key === 'marketplace') {
+    marketplaceQuery.value = ''
+    marketplaceResults.value = []
+    marketplaceSearched.value = false
+    showMarketplaceModal.value = true
   }
+}
+
+// ---- Marketplace Search & Install ----
+
+async function handleMarketplaceSearch() {
+  const q = marketplaceQuery.value.trim()
+  if (!q) {
+    message.warning('请输入搜索关键词')
+    return
+  }
+
+  marketplaceLoading.value = true
+  marketplaceSearched.value = false
+  try {
+    const resp = await api<{ skills: MarketplaceSkill[] }>(
+      `/api/skills-marketplace/search?q=${encodeURIComponent(q)}&limit=20`
+    )
+    marketplaceResults.value = resp.skills || []
+    marketplaceSearched.value = true
+  } catch (err) {
+    message.error(`搜索失败: ${err}`)
+  } finally {
+    marketplaceLoading.value = false
+  }
+}
+
+async function handleMarketplaceInstall(skill: MarketplaceSkill) {
+  marketplaceInstalling.value = skill.skillId
+  try {
+    await api('/api/skills/install-from-marketplace', {
+      method: 'POST',
+      body: JSON.stringify({
+        source: skill.source,
+        skill_name: skill.skillId,
+      }),
+    })
+    message.success(`技能「${skill.name}」安装成功`)
+    showMarketplaceModal.value = false
+    await fetchData()
+  } catch (err) {
+    message.error(`安装失败: ${err}`)
+  } finally {
+    marketplaceInstalling.value = null
+  }
+}
+
+function formatInstalls(n: number): string {
+  if (n >= 10000) return (n / 10000).toFixed(1) + '万'
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
+  return String(n)
 }
 
 // ---- Lifecycle ----

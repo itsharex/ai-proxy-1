@@ -80,3 +80,9 @@ pub struct UninstallSkillBody {
 pub struct InstallFromUrlBody {
     pub url: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct MarketplaceInstallBody {
+    pub source: String,
+    pub skill_name: String,
+}

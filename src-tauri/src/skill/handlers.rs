@@ -288,3 +288,13 @@ pub async fn scan() -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
         .map_err(|e| err_json(e))?;
     Ok(ok(()))
 }
+
+pub async fn install_from_marketplace(
+    Json(body): Json<MarketplaceInstallBody>,
+) -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    manager::install_from_marketplace(pool, &body.source, &body.skill_name)
+        .await
+        .map_err(|e| err_json(e))?;
+    Ok(ok(()))
+}

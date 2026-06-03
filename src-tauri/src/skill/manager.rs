@@ -509,3 +509,32 @@ pub async fn install_from_url(pool: &SqlitePool, url: &str) -> Result<Skill, Str
         updated_at: String::new(),
     })
 }
+
+/// Install skill from marketplace via npx skills CLI
+pub async fn install_from_marketplace(
+    pool: &SqlitePool,
+    source: &str,
+    skill_name: &str,
+) -> Result<(), String> {
+    let output = tokio::process::Command::new("npx")
+        .arg("skills")
+        .arg("add")
+        .arg(source)
+        .arg("--skill")
+        .arg(skill_name)
+        .arg("-g")
+        .arg("-y")
+        .output()
+        .await
+        .map_err(|e| format!("执行 npx skills 失败: {}。请确保已安装 Node.js。", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("安装技能失败: {}", stderr));
+    }
+
+    ensure_default_source(pool).await;
+    scan_all(pool).await?;
+
+    Ok(())
+}

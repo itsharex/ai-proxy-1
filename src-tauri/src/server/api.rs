@@ -939,4 +939,41 @@ pub fn api_routes() -> axum::Router {
         .route("/apps/:app_type/path", axum::routing::put(handlers::set_app_path))
         .route("/runtime-logs", axum::routing::get(get_runtime_logs))
         .route("/runtime-logs/stream", axum::routing::get(runtime_logs_ws))
+        .route("/skills-marketplace/search", axum::routing::get(search_skills_marketplace))
+}
+
+#[derive(Debug, Deserialize)]
+struct MarketplaceSearchQuery {
+    q: String,
+    #[serde(default = "marketplace_default_limit")]
+    limit: u32,
+}
+
+fn marketplace_default_limit() -> u32 {
+    20
+}
+
+async fn search_skills_marketplace(
+    Query(query): Query<MarketplaceSearchQuery>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, Json<ApiError>> {
+    let url = format!(
+        "https://www.skills.sh/api/search?q={}&limit={}",
+        query.q.replace(' ', "+"),
+        query.limit
+    );
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| err_json(format!("搜索请求失败: {}", e)))?;
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| err_json(format!("解析响应失败: {}", e)))?;
+
+    Ok(ok(body))
 }
