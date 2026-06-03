@@ -26,6 +26,13 @@
         </n-space>
       </template>
 
+      <n-input
+        v-model:value="searchQuery"
+        placeholder="搜索技能名称或描述..."
+        clearable
+        style="margin-bottom: 12px"
+      />
+
       <n-spin :show="loading">
         <n-tabs
           v-if="sources.length > 0"
@@ -281,6 +288,7 @@ const discoverLoading = ref(false)
 const sources = ref<SkillSourceWithCount[]>([])
 const skills = ref<Skill[]>([])
 const activeTab = ref<string>('')
+const searchQuery = ref('')
 
 // Add Source Modal
 const showAddSourceModal = ref(false)
@@ -360,7 +368,14 @@ const globalSource = computed(() =>
 
 // Get skills for a given source
 function getSkillsForSource(sourceId: string): Skill[] {
-  return skills.value.filter((s) => s.source_id === sourceId)
+  const list = skills.value.filter((s) => s.source_id === sourceId)
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return list
+  return list.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      (s.description || '').toLowerCase().includes(q)
+  )
 }
 
 // Helper to normalize boolean from SQLite (0/1 -> boolean)
