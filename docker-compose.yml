@@ -1,27 +1,38 @@
-version: '3.8'
-
 services:
   ai-proxy:
+    image: ai-proxy-server:latest
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: ai-proxy
+    restart: unless-stopped
     ports:
-      - "7860:7860"
+      - "${PORT:-7860}:7860"
     environment:
-      - AI_PROXY_DATA_DIR=/data
-      - AI_PROXY_MASTER_KEY=${MASTER_KEY}
-      - AI_PROXY_ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - AI_PROXY_JWT_SECRET=${JWT_SECRET}
-      - RUST_LOG=info
+      AI_PROXY_DATA_DIR: /data
+      AI_PROXY_MASTER_KEY: ${MASTER_KEY:?MASTER_KEY is required}
+      AI_PROXY_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      AI_PROXY_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      AI_PROXY_STATIC_DIR: ${STATIC_DIR:-}
+      RUST_LOG: ${LOG_LEVEL:-info}
     volumes:
       - ai-proxy-data:/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
 volumes:
   ai-proxy-data:
+    driver: local

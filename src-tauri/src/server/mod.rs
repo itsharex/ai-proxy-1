@@ -57,7 +57,7 @@ pub async fn start_server_with_static(
 ) {
     let mut app = create_server(host, port).await;
 
-    if let Some(dir) = static_dir {
+    if let Some(dir) = static_dir.filter(|s| !s.is_empty()) {
         let serve_dir = tower_http::services::ServeDir::new(&dir)
             .append_index_html_on_directories(true);
         app = app.fallback_service(serve_dir);
