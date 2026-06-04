@@ -17,16 +17,18 @@ pub struct AuthClaims {
     pub role: String,
 }
 
-impl<S> FromRequestParts<S> for AuthClaims
-where
-    S: Send + Sync,
-{
+impl<S: Send + Sync> FromRequestParts<S> for AuthClaims {
     type Rejection = Response;
 
-    fn from_request_parts(
-        parts: &mut Parts,
-        _state: &S,
-    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Rejection>> + Send + '_>> {
+    fn from_request_parts<'life0, 'life1, 'async_trait>(
+        parts: &'life0 mut Parts,
+        _state: &'life1 S,
+    ) -> Pin<Box<dyn Future<Output = Result<Self, Self::Rejection>> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        'life1: 'async_trait,
+        Self: 'async_trait,
+    {
         Box::pin(async move {
             let secret = std::env::var(JWT_SECRET_ENV)
                 .unwrap_or_else(|_| "ai-proxy-default-jwt-secret-change-in-production".to_string());

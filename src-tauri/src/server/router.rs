@@ -21,12 +21,20 @@ pub fn create_router() -> Router {
         )
         .layer(middleware::from_fn(auth_middleware));
 
-    Router::new()
+    let mut router = Router::new()
         .merge(proxy_routes)
         .route("/health", get(health_check))
         .nest("/api", api::api_routes())
         .nest("/api/mcp", mcp::mcp_routes())
-        .nest("/api/skills", skill::skill_routes())
+        .nest("/api/skills", skill::skill_routes());
+
+    // Server mode: mount auth routes (login/logout/me)
+    #[cfg(feature = "server")]
+    {
+        router = router.nest("/api/auth", crate::auth::handlers::auth_routes());
+    }
+
+    router
 }
 
 async fn health_check() -> &'static str {

@@ -1,6 +1,59 @@
-// Placeholder for server mode main entry
-// Will be implemented in Task 5
+use clap::Parser;
+use std::path::PathBuf;
+use tracing::info;
+use tracing_subscriber::prelude::*;
 
-fn main() {
-    println!("AI Proxy Server - placeholder");
+#[derive(Parser, Debug)]
+#[command(name = "ai-proxy-server")]
+#[command(about = "AI Proxy Server Mode")]
+struct Args {
+    #[arg(short, long, default_value = "0.0.0.0")]
+    host: String,
+
+    #[arg(short, long, default_value_t = 7860)]
+    port: u16,
+
+    #[arg(short, long, default_value = "/var/lib/ai-proxy")]
+    data_dir: PathBuf,
+
+    #[arg(long, env = "AI_PROXY_ADMIN_PASSWORD")]
+    admin_password: Option<String>,
+
+    #[arg(long, env = "AI_PROXY_STATIC_DIR")]
+    static_dir: Option<String>,
+}
+
+#[tokio::main]
+async fn main() {
+    let args = Args::parse();
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::Layer::default()
+                .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
+        )
+        .with(
+            ai_proxy_lib::get_log_layer()
+                .clone()
+                .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
+        )
+        .init();
+
+    info!("Starting AI Proxy Server on {}:{}", args.host, args.port);
+
+    std::fs::create_dir_all(&args.data_dir).expect("failed to create data directory");
+
+    let db_path = args.data_dir.join("ai-proxy.db");
+    ai_proxy_lib::init_database(db_path.to_str().unwrap()).await;
+
+    ai_proxy_lib::ensure_default_admin(args.admin_password).await;
+
+    let shutdown_rx = tokio::sync::watch::channel(false).1;
+    ai_proxy_lib::server::start_server_with_static(
+        &args.host,
+        args.port,
+        args.static_dir,
+        shutdown_rx,
+    )
+    .await;
 }

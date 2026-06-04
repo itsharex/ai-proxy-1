@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Utc;
 
+#[cfg(feature = "desktop")]
 use crate::apps::types::AppType;
+#[cfg(feature = "desktop")]
 use crate::apps::config::{claude_desktop_config_path, codex_config_path, atomic_write};
 use crate::db::get_pool;
 use super::types::*;
@@ -21,6 +23,7 @@ struct McpServerEntry {
     env: Option<HashMap<String, String>>,
 }
 
+#[cfg(feature = "desktop")]
 fn config_path_for(app_type: &AppType) -> Option<PathBuf> {
     match app_type {
         AppType::ClaudeDesktop => Some(claude_desktop_config_path()),
@@ -32,10 +35,12 @@ fn config_path_for(app_type: &AppType) -> Option<PathBuf> {
     }
 }
 
+#[cfg(feature = "desktop")]
 fn is_toml_config(app_type: &AppType) -> bool {
     matches!(app_type, AppType::CodexCli | AppType::CodexDesktop)
 }
 
+#[cfg(feature = "desktop")]
 pub async fn import_from_app(app_type: &AppType) -> Result<ImportResult, String> {
     let path = config_path_for(app_type)
         .ok_or_else(|| format!("{} does not support MCP import", app_type.display_name()))?;
@@ -152,6 +157,7 @@ fn parse_toml_mcp_servers(content: &str) -> Result<Vec<(String, McpServerEntry)>
     Ok(entries)
 }
 
+#[cfg(feature = "desktop")]
 pub async fn apply_to_app(app_type: &AppType) -> Result<ApplyResult, String> {
     let path = config_path_for(app_type)
         .ok_or_else(|| format!("{} does not support MCP apply", app_type.display_name()))?;
@@ -182,6 +188,7 @@ pub async fn apply_to_app(app_type: &AppType) -> Result<ApplyResult, String> {
     }
 }
 
+#[cfg(feature = "desktop")]
 async fn apply_json(
     path: &PathBuf,
     bindings: &[McpAppBinding],
@@ -272,6 +279,7 @@ async fn apply_json(
     Ok(ApplyResult { applied: bindings.len() as u32 })
 }
 
+#[cfg(feature = "desktop")]
 async fn apply_toml(
     path: &PathBuf,
     bindings: &[McpAppBinding],

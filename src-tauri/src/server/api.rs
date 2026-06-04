@@ -21,6 +21,7 @@ use crate::converter::parsers::responses::ResponsesParser;
 use crate::converter::{FormatGenerator, FormatParser};
 use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
+#[cfg(feature = "desktop")]
 use crate::apps::handlers;
 use crate::logging::store::log_request;
 use crate::get_log_layer;
@@ -925,7 +926,7 @@ async fn handle_runtime_logs_ws(mut socket: WebSocket) {
 // --- Route registration ---
 
 pub fn api_routes() -> axum::Router {
-    axum::Router::new()
+    let mut router = axum::Router::new()
         .route("/providers", axum::routing::get(list_providers).post(create_provider))
         .route("/providers/:id", routing::put(update_provider).delete(delete_provider))
         .route("/logs", axum::routing::get(list_logs).delete(clear_logs))
@@ -936,12 +937,28 @@ pub fn api_routes() -> axum::Router {
         .route("/rules", axum::routing::get(list_rules).post(create_rule))
         .route("/rules/:id", routing::put(update_rule).delete(delete_rule))
         .route("/settings", axum::routing::get(get_settings).put(update_settings))
-        .route("/apps", axum::routing::get(handlers::list_apps))
-        .route("/apps/launch", axum::routing::post(handlers::launch_app))
-        .route("/apps/:app_type/path", axum::routing::put(handlers::set_app_path))
         .route("/runtime-logs", axum::routing::get(get_runtime_logs))
         .route("/runtime-logs/stream", axum::routing::get(runtime_logs_ws))
-        .route("/skills-marketplace/search", axum::routing::get(search_skills_marketplace))
+        .route("/skills-marketplace/search", axum::routing::get(search_skills_marketplace));
+
+    // Desktop mode: app launcher routes
+    #[cfg(feature = "desktop")]
+    {
+        router = router
+            .route("/apps", axum::routing::get(handlers::list_apps))
+            .route("/apps/launch", axum::routing::post(handlers::launch_app))
+            .route("/apps/:app_type/path", axum::routing::put(handlers::set_app_path));
+    }
+
+    // Server mode: add JWT auth middleware to all API routes
+    #[cfg(feature = "server")]
+    {
+        router = router.layer(axum::middleware::from_fn(
+            crate::auth::middleware::jwt_auth_middleware,
+        ));
+    }
+
+    router
 }
 
 #[derive(Debug, Deserialize)]

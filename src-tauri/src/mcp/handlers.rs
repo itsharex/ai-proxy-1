@@ -4,6 +4,7 @@ use uuid::Uuid;
 use chrono::Utc;
 
 use crate::db::get_pool;
+#[cfg(feature = "desktop")]
 use crate::apps::types::AppType;
 use crate::server::api::{ok, err_json, ApiError, ApiResponse};
 use super::types::*;
@@ -229,6 +230,7 @@ pub async fn update_bindings(
     Ok(ok(bindings))
 }
 
+#[cfg(feature = "desktop")]
 pub async fn import_from_app(
     Path(app_type_str): Path<String>,
 ) -> Result<Json<ApiResponse<ImportResult>>, Json<ApiError>> {
@@ -241,6 +243,7 @@ pub async fn import_from_app(
     Ok(ok(result))
 }
 
+#[cfg(feature = "desktop")]
 pub async fn apply_to_app(
     Path(app_type_str): Path<String>,
 ) -> Result<Json<ApiResponse<ApplyResult>>, Json<ApiError>> {

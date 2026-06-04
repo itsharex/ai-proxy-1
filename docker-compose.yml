@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  ai-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "7860:7860"
+    environment:
+      - AI_PROXY_DATA_DIR=/data
+      - AI_PROXY_MASTER_KEY=${MASTER_KEY}
+      - AI_PROXY_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - AI_PROXY_JWT_SECRET=${JWT_SECRET}
+      - RUST_LOG=info
+    volumes:
+      - ai-proxy-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ai-proxy-data:

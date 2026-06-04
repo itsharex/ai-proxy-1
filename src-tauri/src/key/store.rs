@@ -53,7 +53,21 @@ impl KeyStore {
         Ok(decrypted.to_vec())
     }
 
-    pub fn derive_key() -> Result<[u8; 32], ProxyError> {
+pub fn derive_key() -> Result<[u8; 32], ProxyError> {
+        // Server mode: prefer environment variable
+        #[cfg(feature = "server")]
+        {
+            if let Ok(env_key) = std::env::var("AI_PROXY_MASTER_KEY") {
+                if !env_key.is_empty() {
+                    let hash = digest(&SHA256, env_key.as_bytes());
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(hash.as_ref());
+                    return Ok(key);
+                }
+            }
+        }
+
+        // Desktop mode (or server fallback): derive from hostname
         let hostname = hostname::get()
             .map_err(|_| ProxyError::KeyManagement("failed to get hostname".into()))?;
         let hostname_str = hostname

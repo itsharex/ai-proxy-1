@@ -358,3 +358,45 @@ mod tests {
         assert!(!should_show_main_window_for_run_event(&tauri::RunEvent::Ready));
     }
 }
+
+// ===== 服务版入口辅助函数 =====
+
+#[cfg(feature = "server")]
+pub async fn init_database(db_path: &str) {
+    db::init::init_db(db_path).await.expect("failed to initialize database");
+}
+
+#[cfg(feature = "server")]
+pub async fn ensure_default_admin(password: Option<String>) {
+    let pool = db::get_pool().await;
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    if count == 0 {
+        let admin_password = password.unwrap_or_else(|| {
+            let generated = uuid::Uuid::new_v4().to_string();
+            tracing::info!("Generated admin password (set AI_PROXY_ADMIN_PASSWORD to override)");
+            generated
+        });
+
+        let password_hash = bcrypt::hash(&admin_password, bcrypt::DEFAULT_COST)
+            .expect("failed to hash password");
+
+        let user_id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&user_id)
+        .bind("admin")
+        .bind(&password_hash)
+        .bind("admin")
+        .execute(pool)
+        .await
+        .expect("failed to create default admin");
+
+        tracing::info!("Created default admin user: admin / {}", admin_password);
+    }
+}
