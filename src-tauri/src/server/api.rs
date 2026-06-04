@@ -571,8 +571,8 @@ async fn update_settings(
     ];
     for (key, value) in updates {
         if let Some(v) = value {
-            sqlx::query("UPDATE settings SET value = ? WHERE key = ?")
-                .bind(&v).bind(key)
+            sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+                .bind(key).bind(&v)
                 .execute(pool).await.map_err(|e| err_json(e.to_string()))?;
         }
     }

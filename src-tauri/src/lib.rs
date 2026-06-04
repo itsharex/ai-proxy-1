@@ -1,19 +1,26 @@
 pub mod converter;
 pub mod http;
-mod db;
-mod error;
-mod provider;
-mod key;
-mod routing;
-mod interceptor;
-mod usage;
-mod logging;
-mod server;
-mod apps;
-mod mcp;
-mod skill;
+pub mod db;
+pub mod error;
+pub mod provider;
+pub mod key;
+pub mod routing;
+pub mod interceptor;
+pub mod usage;
+pub mod logging;
+pub mod server;
+pub mod mcp;
+pub mod skill;
+
+#[cfg(feature = "desktop")]
+pub mod apps;
+#[cfg(feature = "desktop")]
 mod update;
+#[cfg(feature = "desktop")]
 mod update_timer;
+
+#[cfg(feature = "server")]
+pub mod auth;
 
 use crate::logging::layer::BroadcastLayer;
 
@@ -23,18 +30,28 @@ pub fn get_log_layer() -> &'static BroadcastLayer {
     LOG_LAYER.get_or_init(BroadcastLayer::new)
 }
 
+#[cfg(feature = "desktop")]
 use tauri::Manager;
+#[cfg(feature = "desktop")]
 use tauri::Emitter;
+#[cfg(feature = "desktop")]
 use tauri::menu::{Menu, MenuItem};
+#[cfg(feature = "desktop")]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+#[cfg(feature = "desktop")]
 use std::sync::Mutex;
+#[cfg(feature = "desktop")]
 use once_cell::sync::Lazy;
 
+#[cfg(feature = "desktop")]
 const DEFAULT_PROXY_PORT: u16 = 7860;
+#[cfg(feature = "desktop")]
 const DEFAULT_PROXY_HOST: &str = "0.0.0.0";
 
+#[cfg(feature = "desktop")]
 static APP_RUNTIME: Lazy<Mutex<Option<tokio::runtime::Runtime>>> = Lazy::new(|| Mutex::new(None));
 
+#[cfg(feature = "desktop")]
 struct ProxyControl {
     running: bool,
     port: u16,
@@ -42,6 +59,7 @@ struct ProxyControl {
     shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
 }
 
+#[cfg(feature = "desktop")]
 static PROXY_CONTROL: Lazy<Mutex<ProxyControl>> = Lazy::new(|| {
     Mutex::new(ProxyControl {
         running: false,
@@ -51,6 +69,7 @@ static PROXY_CONTROL: Lazy<Mutex<ProxyControl>> = Lazy::new(|| {
     })
 });
 
+#[cfg(feature = "desktop")]
 async fn get_proxy_config() -> (String, u16) {
     let pool = db::get_pool().await;
     let port_str: String = sqlx::query_scalar("SELECT value FROM settings WHERE key = 'http_port'")
@@ -60,6 +79,7 @@ async fn get_proxy_config() -> (String, u16) {
     (DEFAULT_PROXY_HOST.to_string(), port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
 }
 
+#[cfg(feature = "desktop")]
 fn to_connect_host(host: &str) -> String {
     if host == "0.0.0.0" {
         "127.0.0.1".to_string()
@@ -69,12 +89,14 @@ fn to_connect_host(host: &str) -> String {
 }
 
 #[tauri::command]
+#[cfg(feature = "desktop")]
 async fn get_api_config() -> String {
     let (host, port) = get_proxy_config().await;
     format!("http://{}:{}", to_connect_host(&host), port)
 }
 
 #[tauri::command]
+#[cfg(feature = "desktop")]
 async fn apply_proxy_config() -> String {
     stop_proxy();
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
@@ -84,6 +106,7 @@ async fn apply_proxy_config() -> String {
 }
 
 #[tauri::command]
+#[cfg(feature = "desktop")]
 async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
     let base_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let app_data_dir = if cfg!(debug_assertions) {
@@ -92,22 +115,20 @@ async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
         base_data_dir
     };
 
-    // Stop proxy first
     stop_proxy();
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
-    // Remove all data files
     if app_data_dir.exists() {
         std::fs::remove_dir_all(&app_data_dir).map_err(|e| format!("Failed to remove data: {}", e))?;
     }
     std::fs::create_dir_all(&app_data_dir).map_err(|e| format!("Failed to recreate data dir: {}", e))?;
 
-    // Restart the app
     app.restart();
     #[allow(unreachable_code)]
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 fn start_proxy() -> (String, u16) {
     {
         let ctrl = PROXY_CONTROL.lock().unwrap();
@@ -145,6 +166,7 @@ fn start_proxy() -> (String, u16) {
     (DEFAULT_PROXY_HOST.to_string(), DEFAULT_PROXY_PORT)
 }
 
+#[cfg(feature = "desktop")]
 fn stop_proxy() {
     let mut ctrl = PROXY_CONTROL.lock().unwrap();
     if !ctrl.running {
@@ -156,6 +178,7 @@ fn stop_proxy() {
     ctrl.running = false;
 }
 
+#[cfg(feature = "desktop")]
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -163,7 +186,7 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 fn set_dock_visibility(visible: bool) {
     use objc2::runtime::{AnyClass, AnyObject};
     use objc2::msg_send;
@@ -173,18 +196,17 @@ fn set_dock_visibility(visible: bool) {
         let ns_app_class = AnyClass::get(CStr::from_bytes_with_nul(b"NSApplication\0").unwrap())
             .expect("NSApplication not found");
         let ns_app: *mut AnyObject = msg_send![ns_app_class, sharedApplication];
-        let policy: i64 = if visible { 0 } else { 1 }; // 0 = Regular, 1 = Accessory
+        let policy: i64 = if visible { 0 } else { 1 };
         let _: () = msg_send![ns_app, setActivationPolicy: policy];
 
         if visible {
-            // Restore the application icon to the bundle default
             let _: () = msg_send![ns_app, setApplicationIconImage: std::ptr::null_mut::<AnyObject>()];
-            // Ensure the app is properly activated
             let _: () = msg_send![ns_app, activateIgnoringOtherApps: 1i8];
         }
     }
 }
 
+#[cfg(feature = "desktop")]
 fn should_show_main_window_for_run_event(event: &tauri::RunEvent) -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -200,126 +222,137 @@ fn should_show_main_window_for_run_event(event: &tauri::RunEvent) -> bool {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    use tracing_subscriber::prelude::*;
+    #[cfg(feature = "desktop")]
+    {
+        use tracing_subscriber::prelude::*;
 
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::Layer::default().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
-        .with(get_log_layer().clone().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
-        .init();
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::fmt::Layer::default().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+            .with(get_log_layer().clone().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+            .init();
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ))
-        .plugin(tauri_plugin_window_state::Builder::new().build())
-        .setup(|app| {
-            let base_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
-            let app_data_dir = if cfg!(debug_assertions) {
-                base_data_dir.with_file_name("com.aiproxy.app-dev")
-            } else {
-                base_data_dir
-            };
-            std::fs::create_dir_all(&app_data_dir).expect("failed to create app data dir");
+        tauri::Builder::default()
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ))
+            .plugin(tauri_plugin_window_state::Builder::new().build())
+            .setup(|app| {
+                let base_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+                let app_data_dir = if cfg!(debug_assertions) {
+                    base_data_dir.with_file_name("com.aiproxy.app-dev")
+                } else {
+                    base_data_dir
+                };
+                std::fs::create_dir_all(&app_data_dir).expect("failed to create app data dir");
 
-            if cfg!(debug_assertions) {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_title("AI Proxy [DEV]");
+                if cfg!(debug_assertions) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.set_title("AI Proxy [DEV]");
+                    }
                 }
-            }
 
-            let db_path = app_data_dir.join("ai-proxy.db");
-            let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-            rt.block_on(async {
-                db::init::init_db(db_path.to_str().unwrap()).await
-                    .expect("failed to initialize database");
+                let db_path = app_data_dir.join("ai-proxy.db");
+                let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
+                rt.block_on(async {
+                    db::init::init_db(db_path.to_str().unwrap()).await
+                        .expect("failed to initialize database");
+                });
+
+                {
+                    let mut guard = APP_RUNTIME.lock().unwrap();
+                    *guard = Some(rt);
+                }
+
+                start_proxy();
+                update_timer::start_update_timer(app.handle().clone());
+
+                let check_update_item = MenuItem::with_id(app, "check-update", "Check for Updates", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&check_update_item, &quit_item])?;
+
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
+
+                TrayIconBuilder::with_id("main-tray")
+                    .icon(icon)
+                    .tooltip("AI Proxy")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(move |app, event| {
+                        if event.id() == "quit" {
+                            stop_proxy();
+                            app.exit(0);
+                        } else if event.id() == "check-update" {
+                            let app_handle = app.clone();
+                            let handle = {
+                                let guard = APP_RUNTIME.lock().unwrap();
+                                guard.as_ref().expect("runtime not initialized").handle().clone()
+                            };
+                            handle.spawn(async move {
+                                match update::check_update(&app_handle).await {
+                                    Ok(Some(info)) => {
+                                        let _ = app_handle.emit("update-available", &info);
+                                    }
+                                    Ok(None) => {
+                                        let _ = app_handle.emit("up-to-date", ());
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Manual update check failed: {}", e);
+                                    }
+                                }
+                            });
+                        }
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            #[cfg(target_os = "macos")]
+                            set_dock_visibility(true);
+                            show_main_window(app);
+                        }
+                    })
+                    .build(app)?;
+
+                Ok(())
+            })
+            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update, update::download_update, update::open_update_file])
+            .on_window_event(|window, event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    #[cfg(target_os = "macos")]
+                    set_dock_visibility(false);
+                }
+            })
+            .build(tauri::generate_context!())
+            .expect("error while building tauri application")
+            .run(|app_handle, event| {
+                if should_show_main_window_for_run_event(&event) {
+                    show_main_window(app_handle);
+                }
             });
+    }
 
-            {
-                let mut guard = APP_RUNTIME.lock().unwrap();
-                *guard = Some(rt);
-            }
-
-            start_proxy();
-            update_timer::start_update_timer(app.handle().clone());
-
-            let check_update_item = MenuItem::with_id(app, "check-update", "Check for Updates", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&check_update_item, &quit_item])?;
-
-            let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
-
-            TrayIconBuilder::with_id("main-tray")
-                .icon(icon)
-                .tooltip("AI Proxy")
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(move |app, event| {
-                    if event.id() == "quit" {
-                        stop_proxy();
-                        app.exit(0);
-                    } else if event.id() == "check-update" {
-                        let app_handle = app.clone();
-                        let handle = {
-                            let guard = APP_RUNTIME.lock().unwrap();
-                            guard.as_ref().expect("runtime not initialized").handle().clone()
-                        };
-                        handle.spawn(async move {
-                            match update::check_update(&app_handle).await {
-                                Ok(Some(info)) => {
-                                    let _ = app_handle.emit("update-available", &info);
-                                }
-                                Ok(None) => {
-                                    let _ = app_handle.emit("up-to-date", ());
-                                }
-                                Err(e) => {
-                                    tracing::warn!("Manual update check failed: {}", e);
-                                }
-                            }
-                        });
-                    }
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        #[cfg(target_os = "macos")]
-                        set_dock_visibility(true);
-                        show_main_window(app);
-                    }
-                })
-                .build(app)?;
-
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update, update::download_update, update::open_update_file])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
-                #[cfg(target_os = "macos")]
-                set_dock_visibility(false);
-            }
-        })
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if should_show_main_window_for_run_event(&event) {
-                show_main_window(app_handle);
-            }
-        });
+    #[cfg(not(feature = "desktop"))]
+    {
+        eprintln!("No runtime feature selected. Enable 'desktop' or 'server'.");
+        std::process::exit(1);
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "desktop")]
     use super::should_show_main_window_for_run_event;
 
+    #[cfg(feature = "desktop")]
     #[test]
     fn ready_event_does_not_request_window_restore() {
         assert!(!should_show_main_window_for_run_event(&tauri::RunEvent::Ready));
