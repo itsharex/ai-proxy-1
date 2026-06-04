@@ -62,7 +62,7 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
     }
 }
 
-pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) -> Result<PathBuf, String> {
+pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str) -> Result<PathBuf, String> {
     let path = codex_config_path();
     let mut config: HashMap<String, toml::Value> = if path.exists() {
         let content = tokio::fs::read_to_string(&path)
@@ -73,10 +73,9 @@ pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) ->
         HashMap::new()
     };
 
-    config.insert(
-        "model".to_string(),
-        toml::Value::String(model.to_string()),
-    );
+    // Don't inject model — let codex use its default (gpt-*).
+    // The interceptor rule will route gpt* -> target model.
+    config.remove("model");
 
     config.insert(
         "model_provider".to_string(),
@@ -88,7 +87,7 @@ pub async fn write_codex_config(model: &str, proxy_base: &str, api_key: &str) ->
     let provider_entry = toml::Value::Table({
         let mut table = toml::map::Map::new();
         table.insert("base_url".into(), toml::Value::String(proxy_base.to_string()));
-        table.insert("name".into(), toml::Value::String(model.to_string()));
+        table.insert("name".into(), toml::Value::String("ai-proxy".to_string()));
         table.insert("requires_openai_auth".into(), toml::Value::Boolean(true));
         table.insert("wire_api".into(), toml::Value::String("responses".to_string()));
         table

@@ -336,7 +336,7 @@ async fn sync_codex_route_rule(model: &str) {
         return;
     }
 
-    let condition_json = r#"{"type":"model_matches","pattern":"gpt*"}"#;
+    let condition_json = r#"{"type":"path_contains","substring":"/responses"}"#;
     let action_json = format!(r#"{{"type":"replace_model","model":"{}"}}"#, model);
 
     let _ = sqlx::query(
@@ -353,7 +353,7 @@ async fn sync_codex_route_rule(model: &str) {
     .execute(pool)
     .await;
 
-    tracing::info!("Synced codex auto-route rule: gpt* -> {}", model);
+    tracing::info!("Synced codex auto-route rule: path=/responses -> {}", model);
 }
 
 async fn resolve_proxy_auth_key() -> Result<String, String> {
