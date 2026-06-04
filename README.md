@@ -4,6 +4,26 @@
 
 **仓库地址：** [GitHub](https://github.com/mrhuangyong/ai-proxy) | [Gitee](https://gitee.com/mrhy/ai-proxy)
 
+## 界面截图
+
+<table>
+<tr>
+<td align="center"><b>仪表盘</b><br/><img src="docs/images/dashboard.png" width="280" /></td>
+<td align="center"><b>供应商管理</b><br/><img src="docs/images/providers.png" width="280" /></td>
+<td align="center"><b>拦截规则</b><br/><img src="docs/images/rules.png" width="280" /></td>
+</tr>
+<tr>
+<td align="center"><b>请求日志</b><br/><img src="docs/images/logs.png" width="280" /></td>
+<td align="center"><b>用量统计</b><br/><img src="docs/images/statistics.png" width="280" /></td>
+<td align="center"><b>MCP 服务器管理</b><br/><img src="docs/images/mcp.png" width="280" /></td>
+</tr>
+<tr>
+<td align="center"><b>Skill 管理</b><br/><img src="docs/images/skills.png" width="280" /></td>
+<td align="center"><b>应用管理</b><br/><img src="docs/images/apps.png" width="280" /></td>
+<td align="center"><b>模型测试</b><br/><img src="docs/images/test.png" width="280" /></td>
+</tr>
+</table>
+
 ## 功能特性
 
 ### 核心代理
