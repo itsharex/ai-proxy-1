@@ -524,12 +524,13 @@ struct Settings {
     proxy_auth_key: String,
     request_timeout: String,
     connect_timeout: String,
+    codex_preserve_auth: String,
 }
 
 async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout')"
+        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout', 'codex_preserve_auth')"
     ).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let map: HashMap<String, String> = rows.into_iter().collect();
@@ -541,6 +542,7 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
         proxy_auth_key: map.get("proxy_auth_key").cloned().unwrap_or_default(),
         request_timeout: map.get("request_timeout").cloned().unwrap_or_else(|| "1200".into()),
         connect_timeout: map.get("connect_timeout").cloned().unwrap_or_else(|| "30".into()),
+        codex_preserve_auth: map.get("codex_preserve_auth").cloned().unwrap_or_else(|| "false".into()),
     }))
 }
 
