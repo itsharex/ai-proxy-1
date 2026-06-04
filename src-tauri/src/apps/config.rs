@@ -62,7 +62,7 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
     }
 }
 
-pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str) -> Result<PathBuf, String> {
+pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, preserve_auth: bool) -> Result<PathBuf, String> {
     let path = codex_config_path();
     let mut config: HashMap<String, toml::Value> = if path.exists() {
         let content = tokio::fs::read_to_string(&path)
@@ -90,6 +90,9 @@ pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str) -
         table.insert("name".into(), toml::Value::String("ai-proxy".to_string()));
         table.insert("requires_openai_auth".into(), toml::Value::Boolean(true));
         table.insert("wire_api".into(), toml::Value::String("responses".to_string()));
+        if !api_key.is_empty() {
+            table.insert("experimental_bearer_token".into(), toml::Value::String(api_key.to_string()));
+        }
         table
     });
 
@@ -116,8 +119,12 @@ pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str) -
     atomic_write(&path, &content).await?;
     tracing::info!("Wrote codex config to {:?}", path);
 
-    // Update auth.json with API key
-    write_codex_auth(api_key).await?;
+    // Only overwrite auth.json when preserve_auth is disabled
+    if !preserve_auth {
+        write_codex_auth(api_key).await?;
+    } else {
+        tracing::info!("Preserving existing codex auth.json (preserve_auth enabled)");
+    }
 
     Ok(path)
 }
@@ -385,10 +392,11 @@ pub async fn write_config(
     model_opus: Option<&str>,
     proxy_base: &str,
     api_key: &str,
+    preserve_auth: bool,
 ) -> Result<PathBuf, String> {
     match app_type {
         AppType::CodexCli | AppType::CodexDesktop => {
-            write_codex_config(model, proxy_base, api_key).await
+            write_codex_config(model, proxy_base, api_key, preserve_auth).await
         }
         AppType::ClaudeCli => {
             write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await

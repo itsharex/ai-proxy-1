@@ -139,7 +139,7 @@ pub async fn launch_app(
 
     // Get proxy base URL from settings
     let proxy_settings: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key = 'http_port'",
+        "SELECT key, value FROM settings WHERE key IN ('http_port', 'codex_preserve_auth')",
     )
     .fetch_all(pool)
     .await
@@ -147,6 +147,7 @@ pub async fn launch_app(
 
     let settings_map: HashMap<String, String> = proxy_settings.into_iter().collect();
     let port = settings_map.get("http_port").cloned().unwrap_or_else(|| "7860".into());
+    let preserve_auth = settings_map.get("codex_preserve_auth").map(|v| v == "true").unwrap_or(false);
     let proxy_base = format!("http://127.0.0.1:{}", port);
 
     let proxy_url = format!("{}{}", proxy_base, app_type.proxy_url_suffix());
@@ -175,6 +176,7 @@ pub async fn launch_app(
         model_opus,
         &proxy_url,
         &api_key,
+        preserve_auth,
     )
     .await
     {

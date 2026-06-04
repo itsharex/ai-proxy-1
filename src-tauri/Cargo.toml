@@ -4,10 +4,15 @@ version = "0.4.10"
 description = "AI LLM Network Proxy"
 authors = ["mrhua"]
 edition = "2021"
+default-run = "ai-proxy"
 
 [lib]
 name = "ai_proxy_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "ai-proxy"
+path = "src/main.rs"
 
 [[bin]]
 name = "ai-proxy-server"

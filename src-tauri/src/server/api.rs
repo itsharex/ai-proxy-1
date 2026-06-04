@@ -552,6 +552,7 @@ struct UpdateSettingsBody {
     proxy_auth_key: Option<String>,
     request_timeout: Option<String>,
     connect_timeout: Option<String>,
+    codex_preserve_auth: Option<String>,
 }
 
 async fn update_settings(
@@ -566,6 +567,7 @@ async fn update_settings(
         ("proxy_auth_key", body.proxy_auth_key),
         ("request_timeout", body.request_timeout),
         ("connect_timeout", body.connect_timeout),
+        ("codex_preserve_auth", body.codex_preserve_auth),
     ];
     for (key, value) in updates {
         if let Some(v) = value {

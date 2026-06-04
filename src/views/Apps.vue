@@ -99,6 +99,16 @@
           />
         </n-space>
 
+        <template v-if="isCodexApp(launchForm.appType)">
+          <n-space justify="space-between" align="center">
+            <n-space vertical size="small">
+              <n-text depth="3" style="font-size: 13px">保留官方登录</n-text>
+              <n-text depth="3" style="font-size: 12px">启用后仅修改 config.toml，不覆盖 auth.json，保留手机远程和官方插件</n-text>
+            </n-space>
+            <n-switch v-model:value="launchForm.preserveAuth" />
+          </n-space>
+        </template>
+
         <template v-if="isClaudeApp(launchForm.appType)">
           <n-space vertical size="small" style="width: 100%">
             <n-text depth="3" style="font-size: 13px">Haiku 模型（可选）</n-text>
@@ -208,6 +218,7 @@ const launchForm = ref({
   model_sonnet: null as string | null,
   model_opus: null as string | null,
   work_dir: '',
+  preserveAuth: false,
 })
 
 const showPathModal = ref(false)
@@ -239,6 +250,10 @@ function isClaudeApp(appType: AppType): boolean {
 
 function isCliApp(appType: AppType): boolean {
   return appType === 'codex_cli' || appType === 'claude_cli'
+}
+
+function isCodexApp(appType: AppType): boolean {
+  return appType === 'codex_cli' || appType === 'codex_desktop'
 }
 
 async function browseInstallPath() {
@@ -327,6 +342,16 @@ async function openLaunchModal(app: AppConfig) {
     model_sonnet: app.model_sonnet || null,
     model_opus: app.model_opus || null,
     work_dir: app.work_dir || '',
+    preserveAuth: false,
+  }
+
+  if (isCodexApp(app.app_type)) {
+    try {
+      const s = await api<{ codex_preserve_auth?: string }>('/api/settings')
+      launchForm.value.preserveAuth = s.codex_preserve_auth === 'true'
+    } catch {
+      // ignore
+    }
   }
   showLaunchModal.value = true
 }
@@ -339,6 +364,16 @@ async function handleLaunch() {
 
   launchLoading.value = true
   try {
+    // Save codex_preserve_auth setting before launching
+    if (isCodexApp(launchForm.value.appType)) {
+      await api<void>('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          codex_preserve_auth: launchForm.value.preserveAuth ? 'true' : 'false',
+        }),
+      })
+    }
+
     const body: Record<string, unknown> = {
       app_type: launchForm.value.appType,
       model: launchForm.value.model,
