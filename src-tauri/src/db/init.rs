@@ -151,6 +151,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 012: Skill management tables");
     }
 
+    // Migration 013: users table (server mode authentication)
+    let has_users: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name='users'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_users {
+        let migration13 = include_str!("../../migrations/013_add_users_table.sql");
+        sqlx::query(migration13).execute(pool).await?;
+        info!("Applied migration 013: users table");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }
