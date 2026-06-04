@@ -30,6 +30,7 @@ struct DbProviderModel {
     provider_id: String,
     model_name: String,
     target_model: Option<String>,
+    context_window: i64,
     enabled: i64,
     created_at: String,
 }
@@ -102,7 +103,7 @@ impl ProviderManager {
         info!("Looking up route for model: {}", model);
 
         let matched: DbProviderModel = sqlx::query_as(
-            "SELECT id, provider_id, model_name, target_model, enabled, created_at
+            "SELECT id, provider_id, model_name, target_model, context_window, enabled, created_at
              FROM provider_models WHERE model_name = ? COLLATE NOCASE AND enabled = 1 LIMIT 1",
         )
         .bind(model)
@@ -143,7 +144,7 @@ impl ProviderManager {
     async fn fetch_models(provider_id: &str) -> Result<Vec<ProviderModel>, crate::error::ProxyError> {
         let pool = get_pool().await;
         let rows: Vec<DbProviderModel> = sqlx::query_as(
-            "SELECT id, provider_id, model_name, target_model, enabled, created_at
+            "SELECT id, provider_id, model_name, target_model, context_window, enabled, created_at
              FROM provider_models WHERE provider_id = ? ORDER BY model_name",
         )
         .bind(provider_id)
@@ -156,6 +157,7 @@ impl ProviderManager {
             provider_id: r.provider_id,
             model_name: r.model_name,
             target_model: r.target_model,
+            context_window: r.context_window as u64,
             enabled: r.enabled != 0,
             created_at: r.created_at,
         }).collect())

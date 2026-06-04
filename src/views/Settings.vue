@@ -26,6 +26,22 @@
             style="width: 100%"
           />
         </n-form-item>
+        <n-form-item label="自动重试次数">
+          <n-input-number
+            v-model:value="settings.upstreamMaxRetries"
+            :min="0"
+            :max="50"
+            style="width: 100%"
+          />
+        </n-form-item>
+        <n-form-item label="重试基准间隔（ms）">
+          <n-input-number
+            v-model:value="settings.upstreamRetryBackoffBaseMs"
+            :min="0"
+            :max="10000"
+            style="width: 100%"
+          />
+        </n-form-item>
         <n-form-item label="日志保留天数">
           <n-input-number
             v-model:value="settings.logRetentionDays"
@@ -112,6 +128,8 @@ interface AppSettings {
   logRetentionDays: number
   recordRequestBody: boolean
   proxyAuthKey: string
+  upstreamMaxRetries: number
+  upstreamRetryBackoffBaseMs: number
 }
 
 const settings = ref<AppSettings>({
@@ -121,6 +139,8 @@ const settings = ref<AppSettings>({
   logRetentionDays: 30,
   recordRequestBody: false,
   proxyAuthKey: '',
+  upstreamMaxRetries: 10,
+  upstreamRetryBackoffBaseMs: 500,
 })
 
 const savedNetworkConfig = ref({
@@ -150,6 +170,8 @@ async function loadSettings() {
       logRetentionDays: parseInt(data.log_retention_days) || 30,
       recordRequestBody: data.record_request_body === 'true',
       proxyAuthKey: data.proxy_auth_key,
+      upstreamMaxRetries: parseInt((data as any).upstream_max_retries) || 10,
+      upstreamRetryBackoffBaseMs: parseInt((data as any).upstream_retry_backoff_base_ms) || 500,
     }
     savedNetworkConfig.value = {
       port: settings.value.port,
@@ -177,6 +199,8 @@ async function handleSave() {
         record_request_body: String(settings.value.recordRequestBody),
         proxy_auth_enabled: 'true',
         proxy_auth_key: settings.value.proxyAuthKey,
+        upstream_max_retries: String(settings.value.upstreamMaxRetries),
+        upstream_retry_backoff_base_ms: String(settings.value.upstreamRetryBackoffBaseMs),
       }),
     })
 

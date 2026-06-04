@@ -73,6 +73,15 @@
               placeholder="模型名称"
               style="flex: 1"
             />
+            <n-input-number
+              v-model:value="form.models[index].context_window"
+              placeholder="上下文窗口"
+              :min="1000"
+              :step="1000"
+              style="width: 160px"
+            >
+              <template #suffix>tokens</template>
+            </n-input-number>
             <n-button
               quaternary
               type="error"
@@ -121,7 +130,7 @@
             :key="m.model_name"
             style="display: flex; align-items: center; gap: 8px"
           >
-            <n-tag size="small" style="min-width: 120px">{{ m.model_name }}</n-tag>
+            <n-tag size="small" style="min-width: 120px">{{ m.model_name }}<span v-if="m.context_window && m.context_window !== 272000" style="margin-left: 4px; opacity: 0.6">{{ (m.context_window / 1000).toFixed(0) }}K</span></n-tag>
             <n-button
               size="small"
               type="primary"
@@ -163,7 +172,7 @@ const modalLoading = ref(false)
 
 const showTestModal = ref(false)
 const testProviderName = ref('')
-const testModels = ref<Array<{ model_name: string }>>([])
+const testModels = ref<Array<{ model_name: string; context_window: number | null }>>([])
 const testing = ref(false)
 const testingModel = ref('')
 const testResult = ref<TestResult | null>(null)
@@ -174,7 +183,7 @@ const form = ref({
   format: 'completions' as string,
   endpoint_path: '',
   api_key: '',
-  models: [] as Array<{ model_name: string }>,
+  models: [] as Array<{ model_name: string; context_window: number | null }>,
 })
 
 const formatOptions = [
@@ -240,7 +249,7 @@ const columns = [
 function addModel() {
   form.value.models = [
     ...form.value.models,
-    { model_name: '' },
+    { model_name: '', context_window: null },
   ]
 }
 
@@ -273,6 +282,7 @@ function openEditModal(row: Provider) {
     api_key: '',
     models: row.models.map((m) => ({
       model_name: m.model_name,
+      context_window: m.context_window ?? null,
     })),
   }
   showModal.value = true
@@ -280,7 +290,7 @@ function openEditModal(row: Provider) {
 
 function openTestModal(row: Provider) {
   testProviderName.value = row.name
-  testModels.value = row.models.map((m) => ({ model_name: m.model_name }))
+  testModels.value = row.models.map((m) => ({ model_name: m.model_name, context_window: m.context_window ?? null }))
   testResult.value = null
   testingModel.value = ''
   showTestModal.value = true
@@ -331,6 +341,7 @@ async function handleSubmit() {
         models: form.value.models.map((m) => ({
           model_name: m.model_name,
           target_model: null,
+          context_window: m.context_window,
         })),
       }
       if (form.value.api_key) {

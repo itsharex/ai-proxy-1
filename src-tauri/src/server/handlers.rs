@@ -14,6 +14,7 @@ use bytes::Bytes;
 use futures::stream::StreamExt;
 use serde_json::Value;
 use tracing::{error, info, warn};
+use tokio::time::sleep;
 
 use crate::converter::generators::anthropic::AnthropicGenerator;
 use crate::converter::generators::completions::CompletionsGenerator;
@@ -30,6 +31,19 @@ use crate::interceptor::engine::InterceptorEngine;
 use crate::key::rotation::{KeyRotation, RotationStrategy};
 use crate::key::store::decrypt_api_key;
 use crate::logging::store::log_request;
+
+fn parse_retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| {
+            if let Ok(secs) = v.trim().parse::<u64>() {
+                return Some(secs);
+            }
+            None
+        })
+}
+
 use crate::provider::manager::ProviderManager;
 
 
@@ -334,11 +348,109 @@ async fn handle_proxy(
         req_builder = req_builder.header(key.as_str(), value.as_str());
     }
 
-    let resp = match req_builder.send().await {
-        Ok(r) => r,
-        Err(e) => {
-            let err = ProxyError::Network(format!("request to provider failed: {}", e));
-            tracing::error!("[ERR] upstream network error model={}: {}", target_model, e);
+    let (retry_cfg_total_attempts, retry_cfg_base_ms) = {
+        let pool_ref = crate::db::pool::get_pool().await;
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT key, value FROM settings WHERE key IN ('upstream_max_retries', 'upstream_retry_backoff_base_ms')"
+        ).fetch_all(pool_ref).await.unwrap_or_default();
+        let map: HashMap<String, String> = rows.into_iter().collect();
+        let total_attempts = map.get("upstream_max_retries").and_then(|v| v.parse::<u32>().ok()).unwrap_or(10).max(1);
+        let base_ms = map.get("upstream_retry_backoff_base_ms").and_then(|v| v.parse::<u64>().ok()).unwrap_or(500);
+        (total_attempts, base_ms)
+    };
+
+    let mut last_error_response: Option<(reqwest::StatusCode, String)> = None;
+    let mut resp = None;
+
+    for attempt in 0..retry_cfg_total_attempts {
+        let send_result = req_builder
+            .try_clone()
+            .expect("http request builder must be clonable for retry")
+            .send()
+            .await;
+        let current_resp = match send_result {
+            Ok(r) => r,
+            Err(e) => {
+                let err_msg = format!("request to provider failed: {}", e);
+                tracing::error!("[ERR] upstream network error model={} attempt={}: {}", target_model, attempt, e);
+                if attempt + 1 == retry_cfg_total_attempts {
+                    let err = ProxyError::Network(err_msg.clone());
+                    if let Err(le) = log_request_entry(
+                        &request_id,
+                        &client_format,
+                        &route.provider_name,
+                        &route.target_format,
+                        &ir_request.model,
+                        ir_request.stream,
+                        502,
+                        start.elapsed().as_millis() as i64,
+                        Some(&err_msg),
+                        0,
+                        0,
+                        0,
+                        None,
+                    ).await {
+                        tracing::error!("Network error logging failed: {}", le);
+                    }
+                    return err.into_response();
+                }
+                let wait_ms = retry_cfg_base_ms.saturating_mul(1u64 << attempt.min(6));
+                sleep(std::time::Duration::from_millis(wait_ms)).await;
+                continue;
+            }
+        };
+
+        let status = current_resp.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || status.is_server_error()
+        {
+            let status_code = status.as_u16();
+            let retry_after_secs = parse_retry_after_seconds(&current_resp.headers()).unwrap_or(0);
+            let resp_body = match current_resp.bytes().await {
+                Ok(b) => b,
+                Err(e) => {
+                    return ProxyError::Network(format!("failed to read error response: {}", e)).into_response();
+                }
+            };
+            let body_text = String::from_utf8_lossy(&resp_body).into_owned();
+            let err_msg = if body_text.trim_start().starts_with("<") {
+                extract_text_from_html(&body_text, 4000)
+            } else {
+                body_text
+            };
+            tracing::warn!(
+                "[RETRY] upstream rate/server error model={} attempt={} status={} body={}",
+                target_model,
+                attempt,
+                status_code,
+                truncate_str(&err_msg, 300)
+            );
+            last_error_response = Some((status, err_msg));
+            if attempt + 1 == retry_cfg_total_attempts {
+                break;
+            }
+            let wait_ms = if retry_after_secs > 0 {
+                retry_after_secs.saturating_mul(1000)
+            } else {
+                retry_cfg_base_ms.saturating_mul(1u64 << attempt.min(6))
+            };
+            sleep(std::time::Duration::from_millis(wait_ms)).await;
+            continue;
+        }
+
+        resp = Some(current_resp);
+        break;
+    }
+
+    let resp = match resp {
+        Some(r) => r,
+        None => {
+            let (status, err_msg) = last_error_response.unwrap_or((
+                reqwest::StatusCode::BAD_GATEWAY,
+                "upstream request failed after retries".to_string(),
+            ));
+            tracing::error!("[ERR] upstream status after retries={} model={}", status.as_u16(), target_model);
+            error!("Upstream error {}: {}", status.as_u16(), err_msg);
             if let Err(le) = log_request_entry(
                 &request_id,
                 &client_format,
@@ -346,19 +458,27 @@ async fn handle_proxy(
                 &route.target_format,
                 &ir_request.model,
                 ir_request.stream,
-                502,
+                status.as_u16(),
                 start.elapsed().as_millis() as i64,
-                Some(err.to_string().as_str()),
+                Some(&err_msg),
                 0,
                 0,
                 0,
                 None,
-            )
-            .await
-            {
-                tracing::error!("Network error logging failed: {}", le);
+            ).await {
+                tracing::error!("Upstream error logging failed: {}", le);
             }
-            return err.into_response();
+
+            let error_body = serde_json::json!({
+                "error": {
+                    "message": err_msg,
+                    "type": "upstream_error",
+                    "code": status.as_u16(),
+                }
+            });
+            let mut response = axum::Json(error_body).into_response();
+            *response.status_mut() = status;
+            return response;
         }
     };
 

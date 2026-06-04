@@ -75,6 +75,7 @@ struct CreateProviderBody {
 struct ModelInput {
     model_name: String,
     target_model: Option<String>,
+    context_window: Option<i64>,
 }
 
 async fn create_provider(
@@ -89,8 +90,8 @@ async fn create_provider(
 
     for m in &body.models {
         let model_id = uuid::Uuid::new_v4().to_string();
-        sqlx::query("INSERT INTO provider_models (id, provider_id, model_name, target_model) VALUES (?, ?, ?, ?)")
-            .bind(&model_id).bind(&id).bind(&m.model_name).bind(&m.target_model)
+        sqlx::query("INSERT INTO provider_models (id, provider_id, model_name, target_model, context_window) VALUES (?, ?, ?, ?, ?)")
+            .bind(&model_id).bind(&id).bind(&m.model_name).bind(&m.target_model).bind(m.context_window.unwrap_or(272000i64))
             .execute(pool).await.map_err(|e| err_json(e.to_string()))?;
     }
 
@@ -143,8 +144,8 @@ async fn update_provider(
 
         for m in &models {
             let model_id = uuid::Uuid::new_v4().to_string();
-            sqlx::query("INSERT INTO provider_models (id, provider_id, model_name, target_model) VALUES (?, ?, ?, ?)")
-                .bind(&model_id).bind(&id).bind(&m.model_name).bind(&m.target_model)
+            sqlx::query("INSERT INTO provider_models (id, provider_id, model_name, target_model, context_window) VALUES (?, ?, ?, ?, ?)")
+                .bind(&model_id).bind(&id).bind(&m.model_name).bind(&m.target_model).bind(m.context_window.unwrap_or(272000i64))
                 .execute(pool).await.map_err(|e| err_json(e.to_string()))?;
         }
     }
@@ -518,6 +519,8 @@ async fn delete_rule(
 #[derive(Serialize)]
 struct Settings {
     http_port: String,
+    upstream_max_retries: String,
+    upstream_retry_backoff_base_ms: String,
     log_retention_days: String,
     record_request_body: String,
     proxy_auth_enabled: String,
@@ -530,7 +533,7 @@ struct Settings {
 async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout', 'codex_preserve_auth')"
+        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout', 'codex_preserve_auth', 'upstream_max_retries', 'upstream_retry_backoff_base_ms')"
     ).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let map: HashMap<String, String> = rows.into_iter().collect();
@@ -543,11 +546,15 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
         request_timeout: map.get("request_timeout").cloned().unwrap_or_else(|| "1200".into()),
         connect_timeout: map.get("connect_timeout").cloned().unwrap_or_else(|| "30".into()),
         codex_preserve_auth: map.get("codex_preserve_auth").cloned().unwrap_or_else(|| "false".into()),
+        upstream_max_retries: map.get("upstream_max_retries").cloned().unwrap_or_else(|| "10".into()),
+        upstream_retry_backoff_base_ms: map.get("upstream_retry_backoff_base_ms").cloned().unwrap_or_else(|| "500".into()),
     }))
 }
 
 #[derive(Deserialize)]
 struct UpdateSettingsBody {
+    upstream_max_retries: Option<String>,
+    upstream_retry_backoff_base_ms: Option<String>,
     http_port: Option<String>,
     log_retention_days: Option<String>,
     record_request_body: Option<String>,
@@ -571,6 +578,8 @@ async fn update_settings(
         ("request_timeout", body.request_timeout),
         ("connect_timeout", body.connect_timeout),
         ("codex_preserve_auth", body.codex_preserve_auth),
+        ("upstream_max_retries", body.upstream_max_retries),
+        ("upstream_retry_backoff_base_ms", body.upstream_retry_backoff_base_ms),
     ];
     for (key, value) in updates {
         if let Some(v) = value {

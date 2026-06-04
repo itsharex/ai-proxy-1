@@ -17,6 +17,7 @@ pub struct ProviderModel {
     pub provider_id: String,
     pub model_name: String,
     pub target_model: Option<String>,
+    pub context_window: u64,
     pub enabled: bool,
     pub created_at: String,
 }

@@ -62,7 +62,7 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
     }
 }
 
-pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, preserve_auth: bool) -> Result<PathBuf, String> {
+pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, preserve_auth: bool, context_window: u64) -> Result<PathBuf, String> {
     let path = codex_config_path();
     let mut config: HashMap<String, toml::Value> = if path.exists() {
         let content = tokio::fs::read_to_string(&path)
@@ -83,6 +83,18 @@ pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, p
     );
 
     config.remove("openai_base_url");
+
+    // Inject context window settings so Codex auto-compacts before hitting the model limit
+    config.insert(
+        "model_context_window".to_string(),
+        toml::Value::Integer(context_window as i64),
+    );
+    // Auto-compact at 90% of the context window to leave headroom
+    let compact_limit = (context_window as f64 * 0.9) as i64;
+    config.insert(
+        "model_auto_compact_token_limit".to_string(),
+        toml::Value::Integer(compact_limit),
+    );
 
     let provider_entry = toml::Value::Table({
         let mut table = toml::map::Map::new();
@@ -393,10 +405,11 @@ pub async fn write_config(
     proxy_base: &str,
     api_key: &str,
     preserve_auth: bool,
+    context_window: u64,
 ) -> Result<PathBuf, String> {
     match app_type {
         AppType::CodexCli | AppType::CodexDesktop => {
-            write_codex_config(model, proxy_base, api_key, preserve_auth).await
+            write_codex_config(model, proxy_base, api_key, preserve_auth, context_window).await
         }
         AppType::ClaudeCli => {
             write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await

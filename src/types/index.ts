@@ -13,6 +13,7 @@ export interface ProviderModel {
   provider_id: string
   model_name: string
   target_model: string | null
+  context_window: number
   enabled: boolean
   created_at: string
 }

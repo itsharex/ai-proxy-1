@@ -159,6 +159,17 @@ pub async fn launch_app(
     let model_opus = body.model_opus.as_deref();
     let model_config_json = build_model_config(&body);
 
+    // Resolve context window from provider_models for the selected model
+    let context_window: u64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COALESCE(context_window, 272000) FROM provider_models WHERE model_name = ? COLLATE NOCASE AND enabled = 1 LIMIT 1",
+    )
+    .bind(&body.model)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or(272000) as u64;
+
     // Resolve an API key: Claude uses upstream anthropic key; Codex uses proxy auth key
     let api_key = if app_type == AppType::ClaudeDesktop {
         resolve_proxy_auth_key().await.unwrap_or_default()
@@ -177,6 +188,7 @@ pub async fn launch_app(
         &proxy_url,
         &api_key,
         preserve_auth,
+        context_window,
     )
     .await
     {
