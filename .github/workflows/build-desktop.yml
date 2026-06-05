@@ -67,8 +67,8 @@ jobs:
           git tag "v${VERSION}"
           git push origin HEAD:main "v${VERSION}"
 
-  build:
-    name: Build ${{ matrix.platform.name }}
+  build-and-release:
+    name: Build & Release ${{ matrix.platform.name }}
     needs: [bump]
     if: always() && needs.bump.result != 'failure'
     runs-on: ${{ matrix.platform.runner }}
@@ -78,10 +78,8 @@ jobs:
         platform:
           - name: macOS
             runner: macos-latest
-            artifact_name: ai-proxy-macos
           - name: Windows
             runner: windows-latest
-            artifact_name: ai-proxy-windows
 
     defaults:
       run:
@@ -92,16 +90,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.bump.outputs.version != '' && format('v{0}', needs.bump.outputs.version) || github.ref }}
-
-      - name: Verify version matches tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(grep '"version"' package.json | head -1 | cut -d'"' -f4)
-          echo "Tag version: $VERSION, Package version: $PKG_VERSION"
-          if [ "$VERSION" != "$PKG_VERSION" ]; then
-            echo "WARNING: Tag version $VERSION != package version $PKG_VERSION"
-          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -127,50 +115,16 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      # Tauri uses platform-native toolchains on each runner.
-      # This workflow only builds unsigned artifacts and uploads them as workflow artifacts.
-      - name: Build desktop app
-        run: pnpm tauri build
-
-      - name: Upload desktop bundle
-        uses: actions/upload-artifact@v4
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          name: ${{ matrix.platform.artifact_name }}
-          path: src-tauri/target/release/bundle
-          if-no-files-found: error
-
-  release:
-    name: Publish Release Assets
-    if: startsWith(github.ref, 'refs/tags/v') || needs.bump.outputs.version != ''
-    needs: [build, bump]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download desktop bundles
-        uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-
-      - name: Show downloaded files
-        run: |
-          echo "Downloaded release artifact files:"
-          find release-artifacts -type f | sort
-
-      - name: Upload assets to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.bump.outputs.version && format('v{0}', needs.bump.outputs.version) || github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: false
-          files: |
-            release-artifacts/**/*.dmg
-            release-artifacts/**/*.app.tar.gz
-            release-artifacts/**/*.app.tar.gz.sig
-            release-artifacts/**/*.msi
-            release-artifacts/**/*.msi.zip
-            release-artifacts/**/*.msi.zip.sig
-            release-artifacts/**/*setup.exe
-            release-artifacts/**/*setup.nsis.zip
-            release-artifacts/**/*setup.nsis.zip.sig
-            release-artifacts/**/*.sig
-            release-artifacts/**/latest*.json
+          tagName: v__VERSION__
+          releaseName: "AI Proxy v__VERSION__"
+          releaseBody: "See the assets to download and install this version."
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
