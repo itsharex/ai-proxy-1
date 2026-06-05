@@ -402,17 +402,41 @@ fn model_pattern_matching() {
     assert!(model_matches("gpt-4o-mini", "gpt-4o*"));
     assert!(!model_matches("claude-3", "gpt-4o*"));
     assert!(model_matches("claude-3-opus", "*opus"));
+    assert!(model_matches("gpt-4o", "gpt-4o*"));
+    assert!(!model_matches("gpt-4o", "gpt-4o-mini*"));
+    // contains matching with *prefix*suffix*
+    assert!(model_matches("claude-sonnet-4-20250514", "*sonnet*"));
+    assert!(model_matches("claude-opus-4-20250514", "*opus*"));
+    assert!(model_matches("claude-haiku-3-5-20241022", "*haiku*"));
+    assert!(!model_matches("gpt-4o", "*sonnet*"));
+    assert!(!model_matches("claude-sonnet-4", "*sonnet-4-20250514"));
 }
 
 fn model_matches(model: &str, pattern: &str) -> bool {
-    if pattern == "*" || pattern == model {
+    if pattern == "*" {
         return true;
     }
-    if let Some(prefix) = pattern.strip_suffix('*') {
-        return model.starts_with(prefix);
+    if !pattern.contains('*') {
+        return model == pattern;
     }
-    if let Some(suffix) = pattern.strip_prefix('*') {
-        return model.ends_with(suffix);
+    let starts_star = pattern.starts_with('*');
+    let ends_star = pattern.ends_with('*');
+    let parts: Vec<&str> = pattern.split('*').filter(|s| !s.is_empty()).collect();
+    if parts.is_empty() {
+        return true;
     }
-    false
+    if !starts_star && !model.starts_with(parts[0]) {
+        return false;
+    }
+    if !ends_star && !model.ends_with(parts.last().unwrap()) {
+        return false;
+    }
+    let mut pos = 0;
+    for part in &parts {
+        match model[pos..].find(part) {
+            Some(found) => pos += found + part.len(),
+            None => return false,
+        }
+    }
+    true
 }

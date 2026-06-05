@@ -7,6 +7,7 @@ pub struct ScannedSkill {
     pub is_symlink: bool,
     pub link_target: Option<String>,
     pub has_skill_md: bool,
+    pub is_broken_symlink: bool,
 }
 
 /// Scan a source directory for skills (subdirectories containing SKILL.md)
@@ -48,8 +49,10 @@ pub fn scan_source(source_path: &Path) -> Vec<ScannedSkill> {
             path.clone()
         };
 
+        let is_broken_symlink = is_symlink && !actual_path.exists();
+
         let skill_md_path = actual_path.join("SKILL.md");
-        let has_skill_md = skill_md_path.exists();
+        let has_skill_md = !is_broken_symlink && skill_md_path.exists();
 
         let (name, description) = if has_skill_md {
             parse_skill_md(&skill_md_path)
@@ -64,6 +67,7 @@ pub fn scan_source(source_path: &Path) -> Vec<ScannedSkill> {
             is_symlink,
             link_target,
             has_skill_md,
+            is_broken_symlink,
         });
     }
 

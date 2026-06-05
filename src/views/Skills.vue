@@ -8,6 +8,14 @@
             <n-button @click="handleScan" :loading="scanLoading">
               刷新扫描
             </n-button>
+            <n-button
+              v-if="brokenCount > 0"
+              type="error"
+              @click="handleCleanupBroken"
+              :loading="cleanupLoading"
+            >
+              清理失效链接 ({{ brokenCount }})
+            </n-button>
             <n-button @click="handleAutoDiscover" :loading="discoverLoading">
               自动发现
             </n-button>
@@ -41,15 +49,16 @@
           @update:value="handleTabChange"
         >
           <n-tab-pane
-            v-for="source in sources"
+            v-for="source in visibleSources"
             :key="source.id"
             :name="source.id"
-            :tab="`${source.name} (${source.skill_count})`"
+            :tab="`${source.name} (${getSkillsForSource(source.id).length})`"
           >
             <n-data-table
               :columns="columns"
               :data="getSkillsForSource(source.id)"
               :row-key="(row: Skill) => row.id"
+              :row-class-name="(row: Skill) => toBool(row.is_broken_symlink) ? 'broken-symlink-row' : ''"
               :bordered="false"
               :scroll-x="900"
             />
@@ -285,6 +294,7 @@ const mdEditorExtensions = [basicSetup, markdown(), oneDark]
 const loading = ref(false)
 const scanLoading = ref(false)
 const discoverLoading = ref(false)
+const cleanupLoading = ref(false)
 const sources = ref<SkillSourceWithCount[]>([])
 const skills = ref<Skill[]>([])
 const activeTab = ref<string>('')
@@ -366,16 +376,33 @@ const globalSource = computed(() =>
   sources.value.find((s) => s.is_global)
 )
 
+// Count broken symlinks across all sources
+const brokenCount = computed(() =>
+  skills.value.filter((s) => toBool(s.is_broken_symlink)).length
+)
+
+// Filter sources: hide non-global sources with 0 skills
+const visibleSources = computed(() =>
+  sources.value.filter((s) => toBool(s.is_global) || getSkillsForSource(s.id).length > 0)
+)
+
 // Get skills for a given source
 function getSkillsForSource(sourceId: string): Skill[] {
-  const list = skills.value.filter((s) => s.source_id === sourceId)
+  let list = skills.value.filter((s) => s.source_id === sourceId)
   const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return list
-  return list.filter(
-    (s) =>
-      s.name.toLowerCase().includes(q) ||
-      (s.description || '').toLowerCase().includes(q)
-  )
+  if (q) {
+    list = list.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.description || '').toLowerCase().includes(q)
+    )
+  }
+  // Sort broken symlinks to top
+  return [...list].sort((a, b) => {
+    const aBroken = toBool(a.is_broken_symlink) ? 1 : 0
+    const bBroken = toBool(b.is_broken_symlink) ? 1 : 0
+    return bBroken - aBroken
+  })
 }
 
 // Helper to normalize boolean from SQLite (0/1 -> boolean)
@@ -414,6 +441,9 @@ const columns = [
     width: 100,
     render: (row: Skill) => {
       const source = sources.value.find((s) => s.id === row.source_id)
+      if (toBool(row.is_broken_symlink)) {
+        return h(NTag, { size: 'small', type: 'error' as never }, () => '失效')
+      }
       if (source && toBool(source.is_global)) {
         return h(NTag, { size: 'small', type: 'info' as never }, () => '全局')
       }
@@ -468,8 +498,23 @@ const columns = [
         )
       }
 
+      // Cleanup broken symlink
+      if (toBool(row.is_broken_symlink)) {
+        buttons.push(
+          h(
+            NPopconfirm,
+            { onPositiveClick: () => handleCleanupSingle(row.id) },
+            {
+              trigger: () =>
+                h(NButton, { size: 'small', quaternary: true, type: 'error' }, () => '清理'),
+              default: () => '确认清理此失效链接？',
+            }
+          )
+        )
+      }
+
       // Uninstall (symlink only) or Delete
-      if (isSymlink) {
+      if (isSymlink && !toBool(row.is_broken_symlink)) {
         buttons.push(
           h(
             NPopconfirm,
@@ -910,6 +955,35 @@ function formatInstalls(n: number): string {
   return String(n)
 }
 
+// ---- Cleanup Broken Symlinks ----
+
+async function handleCleanupBroken() {
+  cleanupLoading.value = true
+  try {
+    const result = await api<string[]>('/api/skills/cleanup-broken', { method: 'POST' })
+    if (result && result.length > 0) {
+      message.success(`已清理 ${result.length} 个失效链接`)
+    } else {
+      message.info('没有失效链接需要清理')
+    }
+    await fetchData()
+  } catch (err) {
+    message.error(`清理失败: ${err}`)
+  } finally {
+    cleanupLoading.value = false
+  }
+}
+
+async function handleCleanupSingle(skillId: string) {
+  try {
+    await api(`/api/skills/${skillId}/cleanup-broken`, { method: 'POST' })
+    message.success('已清理')
+    await fetchData()
+  } catch (err) {
+    message.error(`清理失败: ${err}`)
+  }
+}
+
 // ---- Lifecycle ----
 
 onMounted(async () => {
@@ -925,3 +999,12 @@ onMounted(async () => {
   await fetchData()
 })
 </script>
+
+<style scoped>
+.broken-symlink-row td {
+  color: #d03050 !important;
+}
+.broken-symlink-row td .n-tag {
+  color: #d03050 !important;
+}
+</style>

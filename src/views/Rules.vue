@@ -48,7 +48,7 @@
         <n-form-item v-if="formData.condition.type === 'model_matches'" label="模型匹配">
           <n-input
             v-model:value="formData.condition.pattern"
-            placeholder="例如: gpt-4, gpt-*, *"
+            placeholder="例如: *sonnet*, *opus*, gpt-4o*, gpt-4o, *"
           />
         </n-form-item>
         <n-form-item v-if="formData.condition.type === 'path_contains'" label="路径包含">

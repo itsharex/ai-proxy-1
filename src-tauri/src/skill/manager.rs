@@ -74,13 +74,14 @@ pub async fn scan_all(pool: &SqlitePool) -> Result<(), String> {
                     || existing.has_skill_md != s.has_skill_md
                 {
                     sqlx::query(
-                        "UPDATE skills SET name=?, description=?, is_symlink=?, link_target=?, has_skill_md=?, updated_at=datetime('now') WHERE id=?",
+                        "UPDATE skills SET name=?, description=?, is_symlink=?, link_target=?, has_skill_md=?, is_broken_symlink=?, updated_at=datetime('now') WHERE id=?",
                     )
                     .bind(&s.name)
                     .bind(&s.description)
                     .bind(s.is_symlink)
                     .bind(&s.link_target)
                     .bind(s.has_skill_md)
+                    .bind(s.is_broken_symlink)
                     .bind(&existing.id)
                     .execute(pool)
                     .await
@@ -89,7 +90,7 @@ pub async fn scan_all(pool: &SqlitePool) -> Result<(), String> {
             } else {
                 let id = Uuid::new_v4().to_string();
                 sqlx::query(
-                    "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, link_target, has_skill_md) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, link_target, has_skill_md, is_broken_symlink) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
                 .bind(&id)
                 .bind(&s.name)
@@ -99,6 +100,7 @@ pub async fn scan_all(pool: &SqlitePool) -> Result<(), String> {
                 .bind(s.is_symlink)
                 .bind(&s.link_target)
                 .bind(s.has_skill_md)
+                .bind(s.is_broken_symlink)
                 .execute(pool)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -299,7 +301,7 @@ pub async fn create_skill(pool: &SqlitePool, body: &CreateSkillBody) -> Result<S
     let description = body.description.clone().unwrap_or_default();
 
     sqlx::query(
-        "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, has_skill_md) VALUES (?, ?, ?, ?, ?, 0, 1)",
+        "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, has_skill_md, is_broken_symlink) VALUES (?, ?, ?, ?, ?, 0, 1, 0)",
     )
     .bind(&id)
     .bind(&body.name)
@@ -319,6 +321,7 @@ pub async fn create_skill(pool: &SqlitePool, body: &CreateSkillBody) -> Result<S
         is_symlink: false,
         link_target: None,
         has_skill_md: true,
+        is_broken_symlink: false,
         created_at: String::new(),
         updated_at: String::new(),
     })
@@ -485,7 +488,7 @@ pub async fn install_from_url(pool: &SqlitePool, url: &str) -> Result<Skill, Str
     let path_str = target_dir.to_string_lossy().to_string();
 
     sqlx::query(
-        "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, has_skill_md) VALUES (?, ?, ?, ?, ?, 0, 1)",
+        "INSERT INTO skills (id, name, description, source_id, skill_path, is_symlink, has_skill_md, is_broken_symlink) VALUES (?, ?, ?, ?, ?, 0, 1, 0)",
     )
     .bind(&id)
     .bind(&name)
@@ -505,6 +508,7 @@ pub async fn install_from_url(pool: &SqlitePool, url: &str) -> Result<Skill, Str
         is_symlink: false,
         link_target: None,
         has_skill_md: true,
+        is_broken_symlink: false,
         created_at: String::new(),
         updated_at: String::new(),
     })
@@ -537,4 +541,53 @@ pub async fn install_from_marketplace(
     scan_all(pool).await?;
 
     Ok(())
+}
+
+/// Remove all broken symlinks and return cleanup log
+pub async fn cleanup_broken_symlinks(pool: &SqlitePool) -> Result<Vec<String>, String> {
+    let broken: Vec<Skill> = sqlx::query_as(
+        "SELECT * FROM skills WHERE is_broken_symlink = 1",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut cleanup_log = Vec::new();
+
+    for skill in &broken {
+        let path = Path::new(&skill.skill_path);
+        if path.exists() || path.is_symlink() {
+            fs::remove_file(path).ok();
+        }
+        sqlx::query("DELETE FROM skills WHERE id = ?")
+            .bind(&skill.id)
+            .execute(pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        cleanup_log.push(format!("已清理: {} ({})", skill.name, skill.skill_path));
+    }
+
+    Ok(cleanup_log)
+}
+
+/// Remove a single broken symlink by id
+pub async fn cleanup_single_broken(pool: &SqlitePool, skill_id: &str) -> Result<String, String> {
+    let skill: Skill = sqlx::query_as("SELECT * FROM skills WHERE id = ? AND is_broken_symlink = 1")
+        .bind(skill_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("该技能不是失效链接")?;
+
+    let path = Path::new(&skill.skill_path);
+    if path.exists() || path.is_symlink() {
+        fs::remove_file(path).ok();
+    }
+    sqlx::query("DELETE FROM skills WHERE id = ?")
+        .bind(&skill.id)
+        .execute(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(format!("已清理: {}", skill.name))
 }

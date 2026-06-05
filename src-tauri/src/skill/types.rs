@@ -30,6 +30,7 @@ pub struct Skill {
     pub is_symlink: bool,
     pub link_target: Option<String>,
     pub has_skill_md: bool,
+    pub is_broken_symlink: bool,
     pub created_at: String,
     pub updated_at: String,
 }

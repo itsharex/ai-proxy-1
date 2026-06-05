@@ -20,4 +20,6 @@ pub fn skill_routes() -> Router {
         .route("/install-from-url", routing::post(handlers::install_from_url))
         .route("/install-from-marketplace", routing::post(handlers::install_from_marketplace))
         .route("/scan", routing::post(handlers::scan))
+        .route("/cleanup-broken", routing::post(handlers::cleanup_broken_symlinks))
+        .route("/:id/cleanup-broken", routing::post(handlers::cleanup_single_broken))
 }

@@ -70,18 +70,41 @@ impl InterceptorEngine {
     ) -> bool {
         match condition {
             RuleCondition::ModelMatches { pattern } => {
-                if pattern == "*" {
-                    return true;
-                }
-                if let Some(prefix) = pattern.strip_suffix('*') {
-                    return request.model.starts_with(prefix);
-                }
-                request.model == *pattern
+                Self::glob_match(&request.model, pattern)
             }
             RuleCondition::PathContains { substring } => path.contains(substring.as_str()),
             RuleCondition::HeaderExists { name } => headers.contains_key(&name.to_lowercase()),
             RuleCondition::Always => true,
         }
+    }
+
+    fn glob_match(model: &str, pattern: &str) -> bool {
+        if pattern == "*" {
+            return true;
+        }
+        if !pattern.contains('*') {
+            return model == pattern;
+        }
+        let starts_star = pattern.starts_with('*');
+        let ends_star = pattern.ends_with('*');
+        let parts: Vec<&str> = pattern.split('*').filter(|s| !s.is_empty()).collect();
+        if parts.is_empty() {
+            return true;
+        }
+        if !starts_star && !model.starts_with(parts[0]) {
+            return false;
+        }
+        if !ends_star && !model.ends_with(parts.last().unwrap()) {
+            return false;
+        }
+        let mut pos = 0;
+        for part in &parts {
+            match model[pos..].find(part) {
+                Some(found) => pos += found + part.len(),
+                None => return false,
+            }
+        }
+        true
     }
 
     pub fn apply_action(

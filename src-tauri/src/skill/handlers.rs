@@ -298,3 +298,22 @@ pub async fn install_from_marketplace(
         .map_err(|e| err_json(e))?;
     Ok(ok(()))
 }
+
+pub async fn cleanup_broken_symlinks() -> Result<Json<ApiResponse<Vec<String>>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    manager::scan_all(pool).await.map_err(|e| err_json(e))?;
+    let result = manager::cleanup_broken_symlinks(pool)
+        .await
+        .map_err(|e| err_json(e))?;
+    Ok(ok(result))
+}
+
+pub async fn cleanup_single_broken(
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<String>>, Json<ApiError>> {
+    let pool = get_pool().await;
+    let result = manager::cleanup_single_broken(pool, &id)
+        .await
+        .map_err(|e| err_json(e))?;
+    Ok(ok(result))
+}

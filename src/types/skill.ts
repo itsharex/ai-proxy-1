@@ -30,6 +30,7 @@ export interface Skill {
   is_symlink: boolean
   link_target: string | null
   has_skill_md: boolean
+  is_broken_symlink: boolean
   created_at: string
   updated_at: string
 }
@@ -43,6 +44,7 @@ export interface SkillDetail {
   is_symlink: boolean
   link_target: string | null
   has_skill_md: boolean
+  is_broken_symlink: boolean
   created_at: string
   updated_at: string
   skill_md_content: string | null

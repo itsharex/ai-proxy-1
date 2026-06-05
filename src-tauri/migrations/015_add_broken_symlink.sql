@@ -1,0 +1,1 @@
+ALTER TABLE skills ADD COLUMN is_broken_symlink INTEGER NOT NULL DEFAULT 0;
