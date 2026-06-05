@@ -72,6 +72,7 @@ pub async fn scan_all(pool: &SqlitePool) -> Result<(), String> {
                     || existing.is_symlink != s.is_symlink
                     || existing.link_target.as_deref() != s.link_target.as_deref()
                     || existing.has_skill_md != s.has_skill_md
+                    || existing.is_broken_symlink != s.is_broken_symlink
                 {
                     sqlx::query(
                         "UPDATE skills SET name=?, description=?, is_symlink=?, link_target=?, has_skill_md=?, is_broken_symlink=?, updated_at=datetime('now') WHERE id=?",
