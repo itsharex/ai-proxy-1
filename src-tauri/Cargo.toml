@@ -54,8 +54,6 @@ tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-autostart = { version = "2", optional = true }
 tauri-plugin-window-state = { version = "2", optional = true }
-tauri-plugin-updater = { version = "2", optional = true }
-tauri-plugin-process = { version = "2", optional = true }
 
 # Server-only dependencies (optional)
 clap = { version = "4", features = ["derive", "env"], optional = true }
@@ -74,7 +72,6 @@ desktop = [
     "tauri", "tauri-build",
     "tauri-plugin-opener", "tauri-plugin-dialog",
     "tauri-plugin-autostart", "tauri-plugin-window-state",
-    "tauri-plugin-updater", "tauri-plugin-process",
     "objc2"
 ]
 server = ["clap", "jsonwebtoken", "bcrypt"]

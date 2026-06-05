@@ -18,7 +18,7 @@
         <pre style="white-space: pre-wrap; word-break: break-word; font-size: 13px; margin: 0">{{ updateInfo.release_notes || '暂无更新说明' }}</pre>
       </n-scrollbar>
 
-      <!-- 下载/安装进度 -->
+      <!-- 下载进度 -->
       <template v-if="downloadState.downloading || downloadState.done">
         <n-progress
           :percentage="downloadState.percent"
@@ -31,7 +31,7 @@
           {{ formatBytes(downloadState.downloaded) }} / {{ formatBytes(downloadState.total) }}
         </n-text>
         <n-text v-if="downloadState.done" type="success" style="font-size: 12px">
-          更新安装完成，即将重启...
+          下载完成，已保存到下载目录
         </n-text>
       </template>
 
@@ -42,15 +42,22 @@
     </n-space>
     <template #footer>
       <n-space justify="end">
-        <n-button v-if="!downloadState.downloading && !downloadState.done" @click="handleDismiss">
-          稍后提醒
+        <n-button v-if="!downloadState.downloading" @click="handleDismiss">
+          {{ downloadState.done ? '关闭' : '稍后提醒' }}
         </n-button>
         <n-button
           v-if="!downloadState.downloading && !downloadState.done"
           type="primary"
-          @click="handleUpdate"
+          @click="handleDownload"
         >
-          立即更新
+          立即下载
+        </n-button>
+        <n-button
+          v-if="downloadState.done"
+          type="primary"
+          @click="handleInstall"
+        >
+          安装更新
         </n-button>
       </n-space>
     </template>
@@ -61,14 +68,20 @@
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useMessage } from 'naive-ui'
 import { listen } from '@tauri-apps/api/event'
-import { check, type Update } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
+import { invoke } from '@tauri-apps/api/core'
 import { isTauri } from '../utils/env'
 
 interface UpdateInfo {
   version: string
   release_notes: string
+  download_url: string
   published_at: string
+}
+
+interface DownloadProgress {
+  downloaded: number
+  total: number
+  percent: number
 }
 
 const message = useMessage()
@@ -76,6 +89,7 @@ const visible = ref(false)
 const updateInfo = ref<UpdateInfo>({
   version: '',
   release_notes: '',
+  download_url: '',
   published_at: '',
 })
 
@@ -86,11 +100,10 @@ const downloadState = reactive({
   downloaded: 0,
   total: 0,
   error: '',
+  filePath: '',
 })
 
-// Store the update object from the plugin for later download+install
-let pendingUpdate: Update | null = null
-
+let unlistenProgress: (() => void) | null = null
 let unlistenUpToDate: (() => void) | null = null
 
 onMounted(async () => {
@@ -99,21 +112,29 @@ onMounted(async () => {
   unlistenUpToDate = await listen('up-to-date', () => {
     message.success('已是最新版本')
   })
+
+  unlistenProgress = await listen<DownloadProgress>('update-download-progress', (event) => {
+    downloadState.percent = event.payload.percent
+    downloadState.downloaded = event.payload.downloaded
+    downloadState.total = event.payload.total
+  })
 })
 
 onUnmounted(() => {
+  unlistenProgress?.()
   unlistenUpToDate?.()
 })
 
-function show(info: UpdateInfo, update?: Update) {
+function show(info: UpdateInfo) {
   updateInfo.value = { ...info }
-  pendingUpdate = update ?? null
+  // Reset download state
   downloadState.downloading = false
   downloadState.done = false
   downloadState.percent = 0
   downloadState.downloaded = 0
   downloadState.total = 0
   downloadState.error = ''
+  downloadState.filePath = ''
   visible.value = true
 }
 
@@ -121,48 +142,28 @@ function handleDismiss() {
   visible.value = false
 }
 
-async function handleUpdate() {
+async function handleDownload() {
   downloadState.downloading = true
   downloadState.error = ''
 
   try {
-    let update = pendingUpdate
-    if (!update) {
-      update = await check()
-    }
-    if (!update) {
-      downloadState.downloading = false
-      downloadState.error = '未发现可用更新'
-      return
-    }
-
-    await update.downloadAndInstall((event) => {
-      switch (event.event) {
-        case 'Started':
-          downloadState.total = event.data.contentLength ?? 0
-          break
-        case 'Progress':
-          downloadState.downloaded += event.data.chunkLength
-          if (downloadState.total > 0) {
-            downloadState.percent = Math.min(
-              Math.round((downloadState.downloaded / downloadState.total) * 100),
-              100
-            )
-          }
-          break
-        case 'Finished':
-          downloadState.percent = 100
-          break
-      }
+    const filePath = await invoke<string>('download_update', {
+      url: updateInfo.value.download_url,
     })
-
+    downloadState.filePath = filePath
     downloadState.done = true
     downloadState.downloading = false
-
-    await relaunch()
   } catch (e) {
     downloadState.downloading = false
     downloadState.error = String(e)
+  }
+}
+
+async function handleInstall() {
+  try {
+    await invoke('open_update_file', { path: downloadState.filePath })
+  } catch (e) {
+    downloadState.error = `打开文件失败: ${e}`
   }
 }
 

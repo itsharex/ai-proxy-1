@@ -73,7 +73,7 @@ onMounted(async () => {
   }
 
   if (isTauri) {
-    listen<{ version: string; release_notes: string; published_at: string }>('update-available', (event) => {
+    listen<{ version: string; release_notes: string; download_url: string; published_at: string }>('update-available', (event) => {
       updateNotification.value?.show(event.payload)
     })
   }

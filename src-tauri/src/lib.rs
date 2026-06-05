@@ -239,8 +239,6 @@ pub fn run() {
                 None,
             ))
             .plugin(tauri_plugin_window_state::Builder::new().build())
-            .plugin(tauri_plugin_updater::Builder::new().build())
-            .plugin(tauri_plugin_process::init())
             .setup(|app| {
                 let base_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
                 let app_data_dir = if cfg!(debug_assertions) {
@@ -324,7 +322,7 @@ pub fn run() {
 
                 Ok(())
             })
-            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update])
+            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update, update::download_update, update::open_update_file])
             .on_window_event(|window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();

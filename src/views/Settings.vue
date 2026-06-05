@@ -115,7 +115,6 @@ import { useMessage } from 'naive-ui'
 import { invoke } from '@tauri-apps/api/core'
 import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
 import { getVersion } from '@tauri-apps/api/app'
-import { check } from '@tauri-apps/plugin-updater'
 import { isTauri } from '../utils/env'
 import { api, refreshApiConfig } from '../api'
 import UpdateNotification from '../components/UpdateNotification.vue'
@@ -238,13 +237,14 @@ async function handleAutostartChange(enabled: boolean) {
 async function handleCheckUpdate() {
   checkingUpdate.value = true
   try {
-    const update = await check()
-    if (update) {
-      updateNotification.value?.show({
-        version: update.version,
-        release_notes: update.body ?? '',
-        published_at: update.date ?? '',
-      }, update)
+    const result = await invoke<{
+      version: string
+      release_notes: string
+      download_url: string
+      published_at: string
+    } | null>('check_for_update')
+    if (result) {
+      updateNotification.value?.show(result)
     } else {
       message.success('已是最新版本')
     }
