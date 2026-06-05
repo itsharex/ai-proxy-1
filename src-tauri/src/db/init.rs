@@ -179,6 +179,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 014: add context_window column");
     }
 
+    // Migration 015: add is_broken_symlink column to skills
+    let has_broken_symlink: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('skills') WHERE name = 'is_broken_symlink'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_broken_symlink {
+        let migration15 = include_str!("../../migrations/015_add_broken_symlink.sql");
+        sqlx::query(migration15).execute(pool).await?;
+        info!("Applied migration 015: add is_broken_symlink column");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }
