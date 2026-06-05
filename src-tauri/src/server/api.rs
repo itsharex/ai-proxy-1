@@ -51,12 +51,12 @@ pub fn err_json(msg: impl Into<String>) -> Json<ApiError> {
 
 // --- Provider handlers ---
 
-async fn list_providers() -> Json<ApiResponse<Vec<Provider>>> {
+async fn list_providers() -> Result<Json<ApiResponse<Vec<Provider>>>, Json<ApiError>> {
     match ProviderManager::list().await {
-        Ok(providers) => ok(providers),
+        Ok(providers) => Ok(ok(providers)),
         Err(e) => {
             tracing::error!("list_providers error: {}", e);
-            ok(vec![])
+            Err(err_json(e.to_string()))
         }
     }
 }

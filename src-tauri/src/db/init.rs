@@ -165,6 +165,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 013: users table");
     }
 
+    // Migration 014: add context_window column to provider_models
+    let has_context_window: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('provider_models') WHERE name = 'context_window'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_context_window {
+        let migration14 = include_str!("../../migrations/014_add_context_window.sql");
+        sqlx::query(migration14).execute(pool).await?;
+        info!("Applied migration 014: add context_window column");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }
