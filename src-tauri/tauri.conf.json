@@ -37,7 +37,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0MjczMjFGNUVDRUIxMzAKUldRd3NjNWVIekluVkQrcXZZbmJocEwraUJUeUxGbERPRUtvTkhGWklxOGQyRk9BOW1zK3RHemgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMzQTlDQUUxRkEzMjhGOTYKUldTV2p6TDY0Y3FwTStaSjF4Vms0aWhPcms4a25pcjFNVXplb0FLNVg4V0ZOL0tFU3dKTWpIZ2MK",
       "endpoints": [
         "https://github.com/mrhuangyong/ai-proxy/releases/latest/download/latest.json"
       ],
