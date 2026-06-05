@@ -172,11 +172,23 @@ pub async fn launch_app(
 
     // Resolve an API key: Claude uses upstream anthropic key; Codex uses proxy auth key
     let api_key = if app_type == AppType::ClaudeDesktop {
-        resolve_proxy_auth_key().await.unwrap_or_default()
+        resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
+            "{}: 代理认证密钥解析失败 - {}",
+            app_type.display_name(), e
+        )))?
     } else if app_type.is_claude() {
-        resolve_api_key_for_claude(&app_type).await.unwrap_or_default()
+        resolve_api_key_for_claude(&app_type).await.map_err(|e| {
+            tracing::error!("API key resolution failed for {}: {}", app_type.display_name(), e);
+            err_json(format!(
+                "{}: Anthropic API Key 解析失败 - 请确认已配置 anthropic 供应商并添加了有效的 API Key ({})",
+                app_type.display_name(), e
+            ))
+        })?
     } else {
-        resolve_proxy_auth_key().await.unwrap_or_default()
+        resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
+            "{}: 代理认证密钥解析失败 - {}",
+            app_type.display_name(), e
+        )))?
     };
 
     if let Err(e) = config::write_config(

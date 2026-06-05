@@ -217,6 +217,8 @@ pub async fn write_claude_cli_config(
                 "ANTHROPIC_API_KEY".to_string(),
                 serde_json::Value::String(api_key.to_string()),
             );
+        } else {
+            tracing::warn!("ANTHROPIC_API_KEY is empty while writing claude cli config");
         }
         env_obj.insert(
             "ANTHROPIC_MODEL".to_string(),
