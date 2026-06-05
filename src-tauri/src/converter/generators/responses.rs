@@ -57,6 +57,21 @@ impl FormatGenerator for ResponsesGenerator {
                             "call_id": tool_use_id,
                             "output": content,
                         }));
+                    } else if let Some(call_id) = &msg.tool_call_id {
+                        let output: String = msg
+                            .content
+                            .iter()
+                            .filter_map(|p| match p {
+                                IrContentPart::Text { text } => Some(text.as_str()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("");
+                        input_items.push(json!({
+                            "type": "function_call_output",
+                            "call_id": call_id,
+                            "output": output,
+                        }));
                     }
                 }
             }
