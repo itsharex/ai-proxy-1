@@ -172,6 +172,15 @@ async fn delete_provider(
     Ok(ok(()))
 }
 
+async fn toggle_provider(
+    Path(id): Path<String>,
+) -> Result<Json<ApiResponse<serde_json::Value>>, Json<ApiError>> {
+    match ProviderManager::toggle_enabled(&id).await {
+        Ok(new_enabled) => Ok(ok(serde_json::json!({ "enabled": new_enabled }))),
+        Err(e) => Err(err_json(e.to_string())),
+    }
+}
+
 // --- Log handlers ---
 
 #[derive(Debug, Clone, Serialize)]
@@ -940,6 +949,7 @@ pub fn api_routes() -> axum::Router {
     let mut router = axum::Router::new()
         .route("/providers", axum::routing::get(list_providers).post(create_provider))
         .route("/providers/:id", routing::put(update_provider).delete(delete_provider))
+        .route("/providers/:id/toggle", routing::put(toggle_provider))
         .route("/logs", axum::routing::get(list_logs).delete(clear_logs))
         .route("/logs/:id", axum::routing::get(get_log))
         .route("/usage", axum::routing::get(get_usage).delete(clear_usage))

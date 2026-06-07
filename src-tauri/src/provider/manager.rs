@@ -22,6 +22,7 @@ struct DbProvider {
     base_url: String,
     format: String,
     endpoint_path: Option<String>,
+    enabled: i64,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -51,7 +52,7 @@ impl ProviderManager {
     pub async fn list() -> Result<Vec<Provider>, crate::error::ProxyError> {
         let pool = get_pool().await;
         let db_providers: Vec<DbProvider> =
-            sqlx::query_as("SELECT id, name, base_url, format, endpoint_path FROM providers ORDER BY name")
+            sqlx::query_as("SELECT id, name, base_url, format, endpoint_path, enabled FROM providers ORDER BY name")
                 .fetch_all(pool)
                 .await
                 .map_err(|e| crate::error::ProxyError::Database(e))?;
@@ -66,6 +67,7 @@ impl ProviderManager {
                 base_url: p.base_url,
                 format: p.format,
                 endpoint_path: p.endpoint_path,
+                enabled: p.enabled != 0,
                 models,
                 api_keys,
             });
@@ -77,7 +79,7 @@ impl ProviderManager {
     pub async fn get_by_id(provider_id: &str) -> Result<Provider, crate::error::ProxyError> {
         let pool = get_pool().await;
         let p: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, format, endpoint_path FROM providers WHERE id = ?",
+            "SELECT id, name, base_url, format, endpoint_path, enabled FROM providers WHERE id = ?",
         )
         .bind(provider_id)
         .fetch_one(pool)
@@ -93,6 +95,7 @@ impl ProviderManager {
             base_url: p.base_url,
             format: p.format,
             endpoint_path: p.endpoint_path,
+            enabled: p.enabled != 0,
             models,
             api_keys,
         })
@@ -103,8 +106,11 @@ impl ProviderManager {
         info!("Looking up route for model: {}", model);
 
         let matched: DbProviderModel = sqlx::query_as(
-            "SELECT id, provider_id, model_name, target_model, context_window, enabled, created_at
-             FROM provider_models WHERE model_name = ? COLLATE NOCASE AND enabled = 1 LIMIT 1",
+            "SELECT pm.id, pm.provider_id, pm.model_name, pm.target_model, pm.context_window, pm.enabled, pm.created_at
+             FROM provider_models pm
+             JOIN providers p ON p.id = pm.provider_id
+             WHERE pm.model_name = ? COLLATE NOCASE AND pm.enabled = 1 AND p.enabled = 1
+             LIMIT 1",
         )
         .bind(model)
         .fetch_one(pool)
@@ -115,7 +121,7 @@ impl ProviderManager {
 
         let pool = get_pool().await;
         let provider: DbProvider = sqlx::query_as(
-            "SELECT id, name, base_url, format, endpoint_path FROM providers WHERE id = ?",
+            "SELECT id, name, base_url, format, endpoint_path, enabled FROM providers WHERE id = ?",
         )
         .bind(&matched.provider_id)
         .fetch_one(pool)
@@ -139,6 +145,30 @@ impl ProviderManager {
             target_model,
             endpoint_path,
         })
+    }
+
+    /// Toggle the enabled state of a provider. Returns the new state.
+    pub async fn toggle_enabled(provider_id: &str) -> Result<bool, crate::error::ProxyError> {
+        let pool = get_pool().await;
+        let current: (i64,) = sqlx::query_as(
+            "SELECT enabled FROM providers WHERE id = ?",
+        )
+        .bind(provider_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| crate::error::ProxyError::Database(e))?;
+
+        let new_enabled: i64 = if current.0 != 0 { 0 } else { 1 };
+        let pool = get_pool().await;
+        sqlx::query("UPDATE providers SET enabled = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(new_enabled)
+            .bind(provider_id)
+            .execute(pool)
+            .await
+            .map_err(|e| crate::error::ProxyError::Database(e))?;
+
+        info!("Provider {} enabled toggled to {}", provider_id, new_enabled != 0);
+        Ok(new_enabled != 0)
     }
 
     async fn fetch_models(provider_id: &str) -> Result<Vec<ProviderModel>, crate::error::ProxyError> {

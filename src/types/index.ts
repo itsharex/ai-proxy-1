@@ -4,6 +4,7 @@ export interface Provider {
   base_url: string
   format: 'completions' | 'responses' | 'anthropic' | 'gemini'
   endpoint_path?: string | null
+  enabled: boolean
   models: ProviderModel[]
   api_keys: ApiKeyInfo[]
 }

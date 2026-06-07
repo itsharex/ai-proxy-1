@@ -150,7 +150,7 @@
 
 <script setup lang="ts">
 import { ref, h, onMounted } from 'vue'
-import { NTag, NPopconfirm, NButton, NSpace, useMessage } from 'naive-ui'
+import { NTag, NPopconfirm, NButton, NSpace, NSwitch, useMessage } from 'naive-ui'
 import { api } from '../api'
 import type { Provider } from '../types'
 
@@ -216,6 +216,17 @@ const columns = [
     key: 'models_count',
     width: 80,
     render: (row: Provider) => row.models.length,
+  },
+  {
+    title: '状态',
+    key: 'enabled',
+    width: 100,
+    render: (row: Provider) =>
+      h(NSwitch, {
+        value: row.enabled,
+        onUpdateValue: (val: boolean) => handleToggle(row.id, val),
+        size: 'small',
+      }),
   },
   {
     title: '操作',
@@ -377,6 +388,16 @@ async function handleSubmit() {
     modalLoading.value = false
   }
   return false
+}
+
+async function handleToggle(id: string, enabled: boolean) {
+  try {
+    await api(`/api/providers/${id}/toggle`, { method: 'PUT' })
+    message.success(enabled ? '供应商已启用' : '供应商已禁用')
+    await fetchProviders()
+  } catch (err) {
+    message.error(`操作失败: ${err}`)
+  }
 }
 
 async function handleDelete(id: string) {

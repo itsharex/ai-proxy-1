@@ -193,6 +193,20 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
         info!("Applied migration 015: add is_broken_symlink column");
     }
 
+    // Migration 016: add enabled column to providers
+    let has_provider_enabled: bool = sqlx::query_scalar(
+        "SELECT COUNT(*) > 0 FROM pragma_table_info('providers') WHERE name = 'enabled'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false);
+
+    if !has_provider_enabled {
+        let migration16 = include_str!("../../migrations/016_add_provider_enabled.sql");
+        sqlx::query(migration16).execute(pool).await?;
+        info!("Applied migration 016: add enabled column to providers");
+    }
+
     info!("Database schema initialized");
     Ok(())
 }
