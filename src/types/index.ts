@@ -88,7 +88,7 @@ export type RuleAction =
   | { type: 'override_parameter'; parameter: string; value: unknown }
   | { type: 'filter_response'; patterns: string[] }
 
-export type AppType = 'codex_cli' | 'codex_desktop' | 'claude_cli' | 'claude_desktop'
+export type AppType = 'codex_cli' | 'codex_desktop' | 'claude_cli' | 'claude_desktop' | 'opencode_cli'
 
 export interface AppConfig {
   app_type: AppType
@@ -99,6 +99,7 @@ export interface AppConfig {
   model_haiku: string | null
   model_sonnet: string | null
   model_opus: string | null
+  opencode_models: string[] | null
   work_dir: string | null
   proxy_url: string | null
   launched_at: string | null
@@ -111,6 +112,7 @@ export interface LaunchRequest {
   model_haiku?: string
   model_sonnet?: string
   model_opus?: string
+  models?: string[]
   work_dir?: string
 }
 

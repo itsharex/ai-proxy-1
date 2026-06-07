@@ -10,21 +10,33 @@ use crate::key::store::decrypt_api_key;
 use crate::server::api::{ok, err_json, ApiError, ApiResponse};
 
 fn build_model_config(body: &LaunchRequest) -> Option<String> {
-    if body.model_haiku.is_none() && body.model_sonnet.is_none() && body.model_opus.is_none() {
+    if body.model_haiku.is_none() && body.model_sonnet.is_none() && body.model_opus.is_none() && body.models.is_none() {
         return None;
     }
     let mut map = serde_json::Map::new();
     if let Some(ref v) = body.model_haiku { map.insert("haiku".into(), serde_json::Value::String(v.clone())); }
     if let Some(ref v) = body.model_sonnet { map.insert("sonnet".into(), serde_json::Value::String(v.clone())); }
     if let Some(ref v) = body.model_opus { map.insert("opus".into(), serde_json::Value::String(v.clone())); }
+    if let Some(ref v) = body.models {
+        let arr: Vec<serde_json::Value> = v.iter().map(|m| serde_json::Value::String(m.clone())).collect();
+        map.insert("models".into(), serde_json::Value::Array(arr));
+    }
     Some(serde_json::Value::Object(map).to_string())
 }
 
-fn parse_model_config(json: Option<&str>) -> (Option<String>, Option<String>, Option<String>) {
+fn parse_model_config(json: Option<&str>) -> (Option<String>, Option<String>, Option<String>, Option<Vec<String>>) {
     json
-        .and_then(|s| serde_json::from_str::<HashMap<String, String>>(s).ok())
-        .map(|m| (m.get("haiku").cloned(), m.get("sonnet").cloned(), m.get("opus").cloned()))
-        .unwrap_or((None, None, None))
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .map(|v| {
+            let obj = v.as_object();
+            let haiku = obj.and_then(|o| o.get("haiku")).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let sonnet = obj.and_then(|o| o.get("sonnet")).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let opus = obj.and_then(|o| o.get("opus")).and_then(|v| v.as_str()).map(|s| s.to_string());
+            let models = obj.and_then(|o| o.get("models")).and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+            (haiku, sonnet, opus, models)
+        })
+        .unwrap_or((None, None, None, None))
 }
 
 pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
@@ -57,7 +69,7 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
 
         let installed = install_path.is_some();
         let config_path_str = config::config_path_for(&app_type).to_string_lossy().to_string();
-        let (model_haiku, model_sonnet, model_opus) = parse_model_config(
+        let (model_haiku, model_sonnet, model_opus, opencode_models) = parse_model_config(
             db_rec.as_ref().and_then(|r| r.model_config.as_deref())
         );
 
@@ -97,6 +109,7 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
             model_haiku,
             model_sonnet,
             model_opus,
+            opencode_models,
             work_dir: db_rec.as_ref().and_then(|r| {
                 if r.work_dir.as_ref().map_or(true, |s| s.is_empty()) {
                     None
@@ -191,18 +204,24 @@ pub async fn launch_app(
         )))?
     };
 
-    if let Err(e) = config::write_config(
-        &app_type,
-        &body.model,
-        model_haiku,
-        model_sonnet,
-        model_opus,
-        &proxy_url,
-        &api_key,
-        preserve_auth,
-        context_window,
-    )
-    .await
+    let write_result = if app_type == AppType::OpenCodeCli {
+        let models = body.models.as_deref().unwrap_or(&[]);
+        config::write_opencode_config(models, &proxy_url, &api_key).await
+    } else {
+        config::write_config(
+            &app_type,
+            &body.model,
+            model_haiku,
+            model_sonnet,
+            model_opus,
+            &proxy_url,
+            &api_key,
+            preserve_auth,
+            context_window,
+        ).await
+    };
+
+    if let Err(e) = write_result
     {
         // Save error status to DB
         let _ = sqlx::query(
@@ -281,6 +300,7 @@ pub async fn launch_app(
         model_haiku: body.model_haiku,
         model_sonnet: body.model_sonnet,
         model_opus: body.model_opus,
+        opencode_models: body.models,
         work_dir: body.work_dir,
         proxy_url: Some(proxy_url),
         launched_at: Some(now),

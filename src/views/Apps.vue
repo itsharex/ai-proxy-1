@@ -88,16 +88,31 @@
       <n-space vertical size="medium">
         <n-text>应用: {{ launchForm.appName }}</n-text>
 
-        <n-space vertical size="small" style="width: 100%">
-          <n-text depth="3" style="font-size: 13px">默认模型</n-text>
-          <n-select
-            v-model:value="launchForm.model"
-            :options="modelOptions"
-            filterable
-            tag
-            placeholder="选择或输入模型"
-          />
-        </n-space>
+        <template v-if="isOpencodeApp(launchForm.appType)">
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">注入模型（可多选）</n-text>
+            <n-select
+              v-model:value="launchForm.models"
+              :options="modelOptions"
+              multiple
+              filterable
+              tag
+              placeholder="选择要注入到 opencode 配置的模型"
+            />
+          </n-space>
+        </template>
+        <template v-else>
+          <n-space vertical size="small" style="width: 100%">
+            <n-text depth="3" style="font-size: 13px">默认模型</n-text>
+            <n-select
+              v-model:value="launchForm.model"
+              :options="modelOptions"
+              filterable
+              tag
+              placeholder="选择或输入模型"
+            />
+          </n-space>
+        </template>
 
         <template v-if="isCodexApp(launchForm.appType)">
           <n-space justify="space-between" align="center">
@@ -219,6 +234,7 @@ const launchForm = ref({
   model_opus: null as string | null,
   work_dir: '',
   preserveAuth: false,
+  models: [] as string[],
 })
 
 const showPathModal = ref(false)
@@ -234,6 +250,7 @@ const displayNameMap: Record<AppType, string> = {
   codex_desktop: 'Codex Desktop',
   claude_cli: 'Claude CLI',
   claude_desktop: 'Claude Desktop',
+  opencode_cli: 'OpenCode CLI',
 }
 
 function displayName(appType: AppType): string {
@@ -249,11 +266,15 @@ function isClaudeApp(appType: AppType): boolean {
 }
 
 function isCliApp(appType: AppType): boolean {
-  return appType === 'codex_cli' || appType === 'claude_cli'
+  return appType === 'codex_cli' || appType === 'claude_cli' || appType === 'opencode_cli'
 }
 
 function isCodexApp(appType: AppType): boolean {
   return appType === 'codex_cli' || appType === 'codex_desktop'
+}
+
+function isOpencodeApp(appType: AppType): boolean {
+  return appType === 'opencode_cli'
 }
 
 async function browseInstallPath() {
@@ -343,6 +364,7 @@ async function openLaunchModal(app: AppConfig) {
     model_opus: app.model_opus || null,
     work_dir: app.work_dir || '',
     preserveAuth: false,
+    models: app.opencode_models || [],
   }
 
   if (isCodexApp(app.app_type)) {
@@ -357,7 +379,12 @@ async function openLaunchModal(app: AppConfig) {
 }
 
 async function handleLaunch() {
-  if (!launchForm.value.model) {
+  if (isOpencodeApp(launchForm.value.appType)) {
+    if (!launchForm.value.models.length) {
+      message.warning('请至少选择一个模型')
+      return false
+    }
+  } else if (!launchForm.value.model) {
     message.warning('请选择或输入默认模型')
     return false
   }
@@ -390,6 +417,11 @@ async function handleLaunch() {
     }
     if (launchForm.value.work_dir.trim()) {
       body.work_dir = launchForm.value.work_dir.trim()
+    }
+    if (isOpencodeApp(launchForm.value.appType) && launchForm.value.models.length) {
+      body.models = launchForm.value.models
+      // Use first selected model as the "model" field for DB storage
+      body.model = launchForm.value.models[0]
     }
 
     await api<void>('/api/apps/launch', {

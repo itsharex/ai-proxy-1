@@ -9,6 +9,8 @@ pub enum AppType {
     CodexDesktop,
     ClaudeCli,
     ClaudeDesktop,
+    #[serde(rename = "opencode_cli")]
+    OpenCodeCli,
 }
 
 impl fmt::Display for AppType {
@@ -18,6 +20,7 @@ impl fmt::Display for AppType {
             AppType::CodexDesktop => "codex_desktop",
             AppType::ClaudeCli => "claude_cli",
             AppType::ClaudeDesktop => "claude_desktop",
+            AppType::OpenCodeCli => "opencode_cli",
         };
         write!(f, "{}", s)
     }
@@ -30,6 +33,7 @@ impl AppType {
             "codex_desktop" => Some(AppType::CodexDesktop),
             "claude_cli" => Some(AppType::ClaudeCli),
             "claude_desktop" => Some(AppType::ClaudeDesktop),
+            "opencode" | "opencode_cli" => Some(AppType::OpenCodeCli),
             _ => None,
         }
     }
@@ -40,11 +44,12 @@ impl AppType {
             AppType::CodexDesktop,
             AppType::ClaudeCli,
             AppType::ClaudeDesktop,
+            AppType::OpenCodeCli,
         ]
     }
 
     pub fn is_cli(&self) -> bool {
-        matches!(self, AppType::CodexCli | AppType::ClaudeCli)
+        matches!(self, AppType::CodexCli | AppType::ClaudeCli | AppType::OpenCodeCli)
     }
 
     pub fn is_codex(&self) -> bool {
@@ -56,7 +61,7 @@ impl AppType {
     }
 
     pub fn proxy_url_suffix(&self) -> &str {
-        if self.is_codex() {
+        if self.is_codex() || matches!(self, AppType::OpenCodeCli) {
             "/v1"
         } else {
             ""
@@ -69,6 +74,7 @@ impl AppType {
             AppType::CodexDesktop => "Codex Desktop",
             AppType::ClaudeCli => "Claude CLI",
             AppType::ClaudeDesktop => "Claude Desktop",
+            AppType::OpenCodeCli => "OpenCode CLI",
         }
     }
 }
@@ -86,6 +92,7 @@ pub struct AppConfig {
     pub work_dir: Option<String>,
     pub proxy_url: Option<String>,
     pub launched_at: Option<String>,
+    pub opencode_models: Option<Vec<String>>,
     pub status: Option<String>,
 }
 
@@ -96,6 +103,7 @@ pub struct LaunchRequest {
     pub model_haiku: Option<String>,
     pub model_sonnet: Option<String>,
     pub model_opus: Option<String>,
+    pub models: Option<Vec<String>>,
     pub work_dir: Option<String>,
 }
 

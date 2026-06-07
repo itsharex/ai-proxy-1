@@ -8,7 +8,7 @@ use chrono::Utc;
 #[cfg(feature = "desktop")]
 use crate::apps::types::AppType;
 #[cfg(feature = "desktop")]
-use crate::apps::config::{claude_desktop_config_path, codex_config_path, atomic_write};
+use crate::apps::config::{claude_desktop_config_path, codex_config_path, opencode_config_path, atomic_write};
 use crate::db::get_pool;
 use super::types::*;
 
@@ -32,6 +32,7 @@ fn config_path_for(app_type: &AppType) -> Option<PathBuf> {
             Some(home.join(".claude.json"))
         }
         AppType::CodexCli | AppType::CodexDesktop => Some(codex_config_path()),
+        AppType::OpenCodeCli => Some(opencode_config_path()),
     }
 }
 

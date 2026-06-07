@@ -42,6 +42,32 @@ pub fn claude_desktop_config_path() -> PathBuf {
     claude_desktop_3p_dir().join("claude_desktop_config.json")
 }
 
+pub fn opencode_config_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = PathBuf::from(std::env::var("APPDATA").unwrap_or_default());
+        let primary = appdata.join("opencode").join("opencode.json");
+        if primary.exists() {
+            return primary;
+        }
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("C:\\"))
+            .join(".config").join("opencode").join("opencode.json")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let config_home = std::env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("/"))
+                    .join(".config")
+            });
+        config_home.join("opencode").join("opencode.json")
+    }
+}
+
+
 fn claude_desktop_profile_path() -> PathBuf {
     claude_desktop_3p_dir()
         .join("configLibrary")
@@ -59,6 +85,7 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
         AppType::CodexCli | AppType::CodexDesktop => codex_config_path(),
         AppType::ClaudeCli => claude_cli_config_path(),
         AppType::ClaudeDesktop => claude_desktop_config_path(),
+        AppType::OpenCodeCli => opencode_config_path(),
     }
 }
 
@@ -398,6 +425,82 @@ pub async fn write_claude_desktop_config(
     Ok(config_path)
 }
 
+pub async fn write_opencode_config(
+    models: &[String],
+    proxy_base: &str,
+    api_key: &str,
+) -> Result<PathBuf, String> {
+    let path = opencode_config_path();
+    let mut config: serde_json::Value = if path.exists() {
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| format!("Failed to read opencode config: {}", e))?;
+        serde_json::from_str(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    let obj = config.as_object_mut().unwrap();
+
+    // Ensure "provider" object exists
+    let provider = obj
+        .entry("provider")
+        .or_insert_with(|| serde_json::Value::Object(Default::default()));
+
+    let provider_obj = provider.as_object_mut().unwrap();
+
+    // Check if AiProxy already exists
+    if let Some(existing) = provider_obj.get_mut("AiProxy") {
+        if let Some(eobj) = existing.as_object_mut() {
+            let options = eobj
+                .entry("options")
+                .or_insert_with(|| serde_json::Value::Object(Default::default()));
+            if let Some(opt_obj) = options.as_object_mut() {
+                opt_obj.insert("apiKey".to_string(), serde_json::Value::String(api_key.to_string()));
+                opt_obj.insert("baseURL".to_string(), serde_json::Value::String(proxy_base.to_string()));
+            }
+            if !eobj.contains_key("npm") {
+                eobj.insert("npm".to_string(), serde_json::Value::String("@ai-sdk/openai-compatible".to_string()));
+            }
+            // Replace AiProxy models with current selection
+            let mut models_map = serde_json::Map::new();
+            for m in models {
+                models_map.insert(m.clone(), serde_json::json!({ "name": m }));
+            }
+            eobj.insert("models".to_string(), serde_json::Value::Object(models_map));
+        }
+    } else {
+        // Create new AiProxy provider with selected models
+        let mut models_map = serde_json::Map::new();
+        for m in models {
+            models_map.insert(m.clone(), serde_json::json!({ "name": m }));
+        }
+
+        let aiproxy = serde_json::json!({
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {
+                "apiKey": api_key,
+                "baseURL": proxy_base.to_string()
+            },
+            "models": models_map
+        });
+        provider_obj.insert("AiProxy".to_string(), aiproxy);
+    }
+
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize opencode config: {}", e))?;
+
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    }
+
+    atomic_write(&path, &content).await?;
+    tracing::info!("Wrote opencode config to {:?}", path);
+    Ok(path)
+}
+
 pub async fn write_config(
     app_type: &AppType,
     model: &str,
@@ -418,6 +521,10 @@ pub async fn write_config(
         }
         AppType::ClaudeDesktop => {
             write_claude_desktop_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await
+        }
+        AppType::OpenCodeCli => {
+            // For OpenCode, model param is unused; caller passes models via write_opencode_config directly
+            write_opencode_config(&[], proxy_base, api_key).await
         }
     }
 }

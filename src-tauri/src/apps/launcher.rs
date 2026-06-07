@@ -21,6 +21,7 @@ pub async fn detect_path(app_type: &AppType) -> Option<String> {
         AppType::ClaudeCli => detect_cli("claude").await,
         AppType::CodexDesktop => detect_desktop_app("Codex").await,
         AppType::ClaudeDesktop => detect_desktop_app("Claude").await,
+        AppType::OpenCodeCli => detect_cli("opencode").await,
     }
 }
 
