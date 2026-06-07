@@ -146,9 +146,9 @@ const columns = [
     render: (row: RequestLog) => {
       const total = row.prompt_tokens + row.cached_tokens
       if (total === 0) return '-'
-      const rate = Math.round(row.cached_tokens / total * 100)
+      const rate = row.cached_tokens / total * 100
       const type = rate >= 50 ? 'success' : rate > 0 ? 'warning' : 'default'
-      return h(NTag, { size: 'small', type }, () => `${rate}%`)
+      return h(NTag, { size: 'small', type }, () => `${rate.toFixed(2)}%`)
     },
   },
   { title: '输出', key: 'completion_tokens', width: 100, render: (row: RequestLog) => formatNumber(row.completion_tokens) },
