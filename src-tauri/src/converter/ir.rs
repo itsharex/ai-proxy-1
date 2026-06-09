@@ -56,7 +56,7 @@ pub enum IrContentPart {
     Thinking { text: String, signature: Option<String> },
     Image { url: Option<String>, data: Option<String>, media_type: Option<String> },
     ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String, tool_name: Option<String> },
+    ToolResult { tool_use_id: String, content: String, tool_name: Option<String>, id: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

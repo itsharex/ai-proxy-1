@@ -360,6 +360,7 @@ fn parse_gemini_content(content: &Value) -> Result<IrMessage, ProxyError> {
                     tool_use_id: name.clone(),
                     content: response_content,
                     tool_name: Some(name),
+                    id: None,
                 });
             }
         }

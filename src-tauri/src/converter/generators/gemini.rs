@@ -305,7 +305,7 @@ fn convert_gemini_parts(parts: &[IrContentPart]) -> Vec<Value> {
                     }
                 })
             }
-            IrContentPart::ToolResult { tool_use_id, content, tool_name } => {
+            IrContentPart::ToolResult { tool_use_id, content, tool_name, .. } => {
                 let name = tool_name.as_deref().unwrap_or(tool_use_id);
                 json!({
                     "functionResponse": {

@@ -26,6 +26,22 @@ impl FormatGenerator for AnthropicGenerator {
                         _ => "user",
                     };
 
+                    // Tool role messages: generate as tool_result content blocks
+                    if msg.role == IrRole::Tool {
+                        let tool_use_id = msg.tool_call_id.as_deref().unwrap_or("");
+                        let text = extract_text_parts(&msg.content);
+                        let content = json!([{
+                            "type": "tool_result",
+                            "tool_use_id": tool_use_id,
+                            "content": text,
+                        }]);
+                        messages.push(json!({
+                            "role": "user",
+                            "content": content,
+                        }));
+                        continue;
+                    }
+
                     // Filter out ToolUse from content — handled via msg.tool_calls below
                     let content_for_conv: Vec<IrContentPart> = if msg.role == IrRole::Assistant {
                         msg.content.iter()
@@ -341,6 +357,17 @@ impl FormatGenerator for AnthropicGenerator {
                         "input": input,
                     }));
                 }
+                IrContentPart::ToolResult { tool_use_id, content: result_content, id, .. } => {
+                    let mut block = json!({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": result_content,
+                    });
+                    if let Some(block_id) = id {
+                        block["id"] = json!(block_id);
+                    }
+                    content.push(block);
+                }
                 _ => {}
             }
         }
@@ -534,13 +561,17 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
                 "name": name,
                 "input": input,
             }),
-            IrContentPart::ToolResult { tool_use_id, content, .. } => {
+            IrContentPart::ToolResult { tool_use_id, content, id, .. } => {
                 let _ = role;
-                json!({
+                let mut block = json!({
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
                     "content": content,
-                })
+                });
+                if let Some(block_id) = id {
+                    block["id"] = json!(block_id);
+                }
+                block
             }
         })
         .collect();
