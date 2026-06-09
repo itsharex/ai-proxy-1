@@ -24,6 +24,7 @@ impl FormatParser for ResponsesParser {
                     role: IrRole::System,
                     content: vec![IrContentPart::Text {
                         text: instructions.to_string(),
+                        citations: None,
                     }],
                     name: None,
                     tool_call_id: None,
@@ -38,6 +39,7 @@ impl FormatParser for ResponsesParser {
                     role: IrRole::User,
                     content: vec![IrContentPart::Text {
                         text: text.to_string(),
+                        citations: None,
                     }],
                     name: None,
                     tool_call_id: None,
@@ -254,6 +256,8 @@ impl FormatParser for ResponsesParser {
                         cached_tokens: u.get("input_tokens_details")
                             .and_then(|d| d["cached_tokens"].as_u64())
                             .unwrap_or(0) as u32,
+                        cache_creation_input_tokens: 0,
+                        thinking_tokens: 0,
                     })
                 });
 
@@ -288,6 +292,8 @@ impl FormatParser for ResponsesParser {
                         cached_tokens: u.get("input_tokens_details")
                             .and_then(|d| d["cached_tokens"].as_u64())
                             .unwrap_or(0) as u32,
+                        cache_creation_input_tokens: 0,
+                        thinking_tokens: 0,
                     })
                 });
 
@@ -330,6 +336,7 @@ impl FormatParser for ResponsesParser {
                                         if let Some(text) = part["text"].as_str() {
                                             content_parts.push(IrContentPart::Text {
                                                 text: text.to_string(),
+                                                citations: None,
                                             });
                                         }
                                     }
@@ -383,6 +390,8 @@ impl FormatParser for ResponsesParser {
                     cached_tokens: u.get("input_tokens_details")
                         .and_then(|d| d["cached_tokens"].as_u64())
                         .unwrap_or(0) as u32,
+                    cache_creation_input_tokens: 0,
+                    thinking_tokens: 0,
                 })
             })
             .unwrap_or(IrUsage {
@@ -390,6 +399,8 @@ impl FormatParser for ResponsesParser {
                 completion_tokens: 0,
                 total_tokens: 0,
                 cached_tokens: 0,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             });
 
         Ok(IrResponse {
@@ -397,6 +408,7 @@ impl FormatParser for ResponsesParser {
             model,
             message,
             finish_reason,
+            stop_sequence: None,
             usage,
         })
     }
@@ -431,6 +443,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 role: IrRole::Tool,
                 content: vec![IrContentPart::Text {
                     text: output,
+                    citations: None,
                 }],
                 name: None,
                 tool_call_id: Some(call_id),
@@ -460,6 +473,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 if !text.is_empty() {
                     content_parts.push(IrContentPart::Text {
                         text: text.to_string(),
+                        citations: None,
                     });
                 }
             }
@@ -470,6 +484,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                         if let Some(text) = part["text"].as_str() {
                             content_parts.push(IrContentPart::Text {
                                 text: text.to_string(),
+                                citations: None,
                             });
                         }
                     }
@@ -480,6 +495,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 if let Some(text) = item["input"].as_str() {
                     content_parts.push(IrContentPart::Text {
                         text: text.to_string(),
+                        citations: None,
                     });
                 }
             }
@@ -488,7 +504,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
             if role == IrRole::Assistant && !content_parts.is_empty() {
                 let all_text: String = content_parts.iter()
                     .filter_map(|p| match p {
-                        IrContentPart::Text { text } => Some(text.as_str()),
+                        IrContentPart::Text { text, .. } => Some(text.as_str()),
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -497,11 +513,11 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 let (thinking_opt, clean) = split_thinking_and_content(&all_text);
                 content_parts.clear();
                 if let Some(thinking) = thinking_opt {
-                    content_parts.push(IrContentPart::Thinking { text: thinking });
+                    content_parts.push(IrContentPart::Thinking { text: thinking, signature: None });
                 }
                 let trimmed = clean.trim();
                 if !trimmed.is_empty() {
-                    content_parts.push(IrContentPart::Text { text: trimmed.to_string() });
+                    content_parts.push(IrContentPart::Text { text: trimmed.to_string(), citations: None });
                 }
             }
 
@@ -529,7 +545,7 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 content: if text.is_empty() {
                     vec![]
                 } else {
-                    vec![IrContentPart::Thinking { text }]
+                    vec![IrContentPart::Thinking { text, signature: None }]
                 },
                 name: None,
                 tool_call_id: None,
@@ -576,7 +592,7 @@ fn merge_consecutive_assistant_messages(messages: Vec<IrMessage>) -> Vec<IrMessa
                 if !msg.content.is_empty() {
                     last.content
                         .extend(msg.content.into_iter().filter(|p| {
-                            if let IrContentPart::Text { text } = p {
+                            if let IrContentPart::Text { text, .. } = p {
                                 !text.is_empty()
                             } else {
                                 true

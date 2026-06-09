@@ -59,6 +59,118 @@ pub async fn handle_anthropic(request: Request) -> Response {
     handle_proxy(request, ClientFormat::Anthropic, None, false).await
 }
 
+pub async fn handle_anthropic_count_tokens(request: Request) -> Response {
+    let start = std::time::Instant::now();
+    let request_id = uuid::Uuid::new_v4().to_string();
+
+    let (_parts, body) = request.into_parts();
+    let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+        Ok(b) => b,
+        Err(e) => {
+            error!("Failed to read count_tokens request body: {}", e);
+            return ProxyError::Parse(format!("failed to read body: {}", e)).into_response();
+        }
+    };
+
+    let body_value: Value = match serde_json::from_slice(&body_bytes) {
+        Ok(v) => v,
+        Err(e) => {
+            error!("Invalid JSON in count_tokens request: {}", e);
+            return ProxyError::Parse(format!("invalid JSON: {}", e)).into_response();
+        }
+    };
+
+    let model = body_value["model"].as_str().unwrap_or("");
+
+    let route = match ProviderManager::find_for_model(model).await {
+        Ok(r) => {
+            info!("[count_tokens] Route: {} -> {} via {}", model, r.target_model, r.provider_name);
+            r
+        }
+        Err(e) => {
+            error!("[count_tokens] No route for model '{}': {}", model, e);
+            return e.into_response();
+        }
+    };
+
+    let selected_key = match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
+        Ok(k) => k,
+        Err(e) => {
+            error!("[count_tokens] Key rotation error: {}", e);
+            return e.into_response();
+        }
+    };
+
+    let nonce_slice: Vec<u8> = selected_key.nonce;
+    let mut nonce_array = [0u8; 12];
+    if nonce_slice.len() == 12 {
+        nonce_array.copy_from_slice(&nonce_slice);
+    } else {
+        return ProxyError::KeyManagement("invalid nonce length".into()).into_response();
+    }
+
+    let api_key = match decrypt_api_key(&selected_key.encrypted_key, &nonce_array) {
+        Ok(k) => k,
+        Err(e) => {
+            error!("[count_tokens] Key decryption error: {}", e);
+            return e.into_response();
+        }
+    };
+
+    // Replace model with target model if configured
+    let mut forward_body = body_value.clone();
+    if !route.target_model.is_empty() && route.target_model != model {
+        forward_body["model"] = Value::String(route.target_model.clone());
+    }
+
+    let url = format!("{}/v1/messages/count_tokens", route.base_url.trim_end_matches('/'));
+    info!("[count_tokens] Upstream: POST {}", url);
+
+    let http_client = crate::http::SHARED_HTTP_CLIENT.clone();
+    let mut req_builder = http_client
+        .post(&url)
+        .json(&forward_body)
+        .header("Content-Type", "application/json")
+        .header("x-api-key", &api_key)
+        .header("anthropic-version", "2023-06-01")
+        .timeout(std::time::Duration::from_secs(300));
+
+    match route.target_format {
+        ClientFormat::Anthropic => {
+            req_builder = req_builder.header("x-api-key", &api_key);
+            req_builder = req_builder.header("anthropic-version", "2023-06-01");
+        }
+        _ => {
+            req_builder = req_builder.bearer_auth(&api_key);
+        }
+    }
+
+    let resp = match req_builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            error!("[count_tokens] Upstream request failed: {}", e);
+            return ProxyError::Network(format!("upstream request failed: {}", e)).into_response();
+        }
+    };
+
+    let status = resp.status();
+    let resp_body = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            error!("[count_tokens] Failed to read upstream response: {}", e);
+            return ProxyError::Network(format!("failed to read response: {}", e)).into_response();
+        }
+    };
+
+    info!("[count_tokens] Completed in {}ms, status={}", start.elapsed().as_millis(), status);
+
+    (
+        status,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        resp_body.to_vec(),
+    ).into_response()
+}
+
 pub async fn handle_gemini(Path(model_segment): Path<String>, request: Request) -> Response {
     let (model, is_stream) = parse_gemini_model_segment(&model_segment);
     handle_proxy(request, ClientFormat::Gemini, Some(model), is_stream).await
@@ -617,7 +729,7 @@ async fn handle_proxy(
         if let Some(ref resp_id) = ir_response.id {
             let reasoning: String = ir_response.message.content.iter()
                 .filter_map(|p| match p {
-                    IrContentPart::Thinking { text } => Some(text.as_str()),
+                    IrContentPart::Thinking { text, .. } => Some(text.as_str()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -2193,7 +2305,7 @@ fn inject_cached_reasoning_into_assistant_messages(
 
     // Prefer exact match by previous_response_id
     if let Some(reasoning) = previous_response_id.and_then(|id| cache.get(id)) {
-        msg.content.insert(0, IrContentPart::Thinking { text: reasoning.clone() });
+        msg.content.insert(0, IrContentPart::Thinking { text: reasoning.clone(), signature: None });
         return;
     }
 
@@ -2202,7 +2314,7 @@ fn inject_cached_reasoning_into_assistant_messages(
         .content
         .iter()
         .filter_map(|p| match p {
-            IrContentPart::Text { text } => Some(text.as_str()),
+            IrContentPart::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -2211,10 +2323,10 @@ fn inject_cached_reasoning_into_assistant_messages(
     let (thinking_opt, remaining) = split_thinking_tags(&text_content);
     if let Some(thinking) = thinking_opt {
         msg.content.clear();
-        msg.content.push(IrContentPart::Thinking { text: thinking });
+        msg.content.push(IrContentPart::Thinking { text: thinking, signature: None });
         let trimmed = remaining.trim();
         if !trimmed.is_empty() {
-            msg.content.push(IrContentPart::Text { text: trimmed.to_string() });
+            msg.content.push(IrContentPart::Text { text: trimmed.to_string(), citations: None });
         }
     }
 }
@@ -2271,6 +2383,7 @@ mod tests {
             role: IrRole::Assistant,
             content: vec![IrContentPart::Text {
                 text: "最终答案".to_string(),
+                citations: None,
             }],
             name: None,
             tool_call_id: None,
@@ -2285,7 +2398,7 @@ mod tests {
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].content.len(), 1);
         match &messages[0].content[0] {
-            IrContentPart::Text { text } => assert_eq!(text, "最终答案"),
+            IrContentPart::Text { text, .. } => assert_eq!(text, "最终答案"),
             other => panic!("expected text content, got {:?}", other),
         }
 
@@ -2293,7 +2406,7 @@ mod tests {
         inject_cached_reasoning_into_assistant_messages(&mut messages, Some("resp_1"), &cache);
         assert_eq!(messages[0].content.len(), 2);
         match &messages[0].content[0] {
-            IrContentPart::Thinking { text } => assert_eq!(text, "已缓存推理"),
+            IrContentPart::Thinking { text, .. } => assert_eq!(text, "已缓存推理"),
             other => panic!("expected thinking content, got {:?}", other),
         }
     }

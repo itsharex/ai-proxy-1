@@ -313,17 +313,25 @@ impl FormatGenerator for AnthropicGenerator {
 
         for part in &ir.message.content {
             match part {
-                IrContentPart::Text { text } => {
-                    content.push(json!({
+                IrContentPart::Text { text, citations } => {
+                    let mut block = json!({
                         "type": "text",
                         "text": text,
-                    }));
+                    });
+                    if let Some(c) = citations {
+                        block["citations"] = c.clone();
+                    }
+                    content.push(block);
                 }
-                IrContentPart::Thinking { text } => {
-                    content.push(json!({
+                IrContentPart::Thinking { text, signature } => {
+                    let mut block = json!({
                         "type": "thinking",
                         "thinking": text,
-                    }));
+                    });
+                    if let Some(sig) = signature {
+                        block["signature"] = json!(sig);
+                    }
+                    content.push(block);
                 }
                 IrContentPart::ToolUse { id, name, input } => {
                     content.push(json!({
@@ -371,6 +379,17 @@ impl FormatGenerator for AnthropicGenerator {
         if ir.usage.cached_tokens > 0 {
             usage["cache_read_input_tokens"] = json!(ir.usage.cached_tokens);
         }
+        if ir.usage.cache_creation_input_tokens > 0 {
+            usage["cache_creation_input_tokens"] = json!(ir.usage.cache_creation_input_tokens);
+        }
+        if ir.usage.thinking_tokens > 0 {
+            usage["output_tokens_details"] = json!({ "thinking_tokens": ir.usage.thinking_tokens });
+        }
+
+        let stop_sequence: Value = match &ir.stop_sequence {
+            Some(s) => json!(s),
+            None => Value::Null,
+        };
 
         Ok(json!({
             "id": id,
@@ -379,7 +398,7 @@ impl FormatGenerator for AnthropicGenerator {
             "model": ir.model.as_deref().unwrap_or(""),
             "content": content,
             "stop_reason": stop_reason,
-            "stop_sequence": null,
+            "stop_sequence": stop_sequence,
             "usage": usage,
         }))
     }
@@ -463,7 +482,7 @@ fn extract_text_parts(parts: &[IrContentPart]) -> String {
     parts
         .iter()
         .filter_map(|part| match part {
-            IrContentPart::Text { text } => Some(text.as_str()),
+            IrContentPart::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -472,7 +491,7 @@ fn extract_text_parts(parts: &[IrContentPart]) -> String {
 
 fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
     if parts.len() == 1 {
-        if let Some(IrContentPart::Text { text }) = parts.first() {
+        if let Some(IrContentPart::Text { text, .. }) = parts.first() {
             return json!(text);
         }
     }
@@ -480,11 +499,11 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
     let items: Vec<Value> = parts
         .iter()
         .map(|part| match part {
-            IrContentPart::Text { text } => json!({
+            IrContentPart::Text { text, .. } => json!({
                 "type": "text",
                 "text": text,
             }),
-            IrContentPart::Thinking { text } => json!({
+            IrContentPart::Thinking { text, .. } => json!({
                 "type": "text",
                 "text": text,
             }),

@@ -698,7 +698,7 @@ async fn test_model(
         model: route.target_model.clone(),
         messages: vec![IrMessage {
             role: IrRole::User,
-            content: vec![IrContentPart::Text { text: "Hi, reply with 'OK'.".into() }],
+            content: vec![IrContentPart::Text { text: "Hi, reply with 'OK'.".into(), citations: None }],
             name: None,
             tool_call_id: None,
             tool_calls: None,
@@ -833,7 +833,7 @@ async fn test_model(
             Ok(ir_resp) => {
                 let mut text_parts: Vec<String> = Vec::new();
                 for part in &ir_resp.message.content {
-                    if let IrContentPart::Text { text } = part {
+                    if let IrContentPart::Text { text, .. } = part {
                         text_parts.push(text.clone());
                     }
                 }

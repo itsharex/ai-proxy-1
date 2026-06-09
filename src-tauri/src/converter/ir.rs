@@ -52,8 +52,8 @@ pub enum IrRole {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IrContentPart {
-    Text { text: String },
-    Thinking { text: String },
+    Text { text: String, citations: Option<Value> },
+    Thinking { text: String, signature: Option<String> },
     Image { url: Option<String>, data: Option<String>, media_type: Option<String> },
     ToolUse { id: String, name: String, input: Value },
     ToolResult { tool_use_id: String, content: String, tool_name: Option<String> },
@@ -101,12 +101,17 @@ pub struct IrToolCallDelta {
     pub arguments: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IrUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
+    #[serde(default)]
     pub cached_tokens: u32,
+    #[serde(default)]
+    pub cache_creation_input_tokens: u32,
+    #[serde(default)]
+    pub thinking_tokens: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +120,7 @@ pub struct IrResponse {
     pub model: Option<String>,
     pub message: IrMessage,
     pub finish_reason: Option<String>,
+    pub stop_sequence: Option<String>,
     pub usage: IrUsage,
 }
 

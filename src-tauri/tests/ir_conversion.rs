@@ -18,6 +18,7 @@ fn sample_ir_request() -> IrRequest {
                 role: IrRole::System,
                 content: vec![IrContentPart::Text {
                     text: "You are helpful.".into(),
+                    citations: None,
                 }],
                 name: None,
                 tool_call_id: None,
@@ -27,6 +28,7 @@ fn sample_ir_request() -> IrRequest {
                 role: IrRole::User,
                 content: vec![IrContentPart::Text {
                     text: "Hello!".into(),
+                    citations: None,
                 }],
                 name: None,
                 tool_call_id: None,
@@ -60,17 +62,21 @@ fn sample_ir_response() -> IrResponse {
             role: IrRole::Assistant,
             content: vec![IrContentPart::Text {
                 text: "Hi there!".into(),
+                citations: None,
             }],
             name: None,
             tool_call_id: None,
             tool_calls: None,
         },
         finish_reason: Some("stop".into()),
+        stop_sequence: None,
         usage: IrUsage {
             prompt_tokens: 10,
             completion_tokens: 5,
             total_tokens: 15,
             cached_tokens: 0,
+            cache_creation_input_tokens: 0,
+            thinking_tokens: 0,
         },
     }
 }
@@ -83,7 +89,7 @@ fn assert_request_roundtrip(parsed: &IrRequest, original: &IrRequest) {
         assert_eq!(p.content.len(), o.content.len());
         for (pc, oc) in p.content.iter().zip(o.content.iter()) {
             match (pc, oc) {
-                (IrContentPart::Text { text: t1 }, IrContentPart::Text { text: t2 }) => {
+                (IrContentPart::Text { text: t1, .. }, IrContentPart::Text { text: t2, .. }) => {
                     assert_eq!(t1, t2);
                 }
                 _ => panic!("content part type mismatch"),
@@ -104,7 +110,7 @@ fn assert_response_roundtrip(parsed: &IrResponse, original: &IrResponse) {
         .zip(original.message.content.iter())
     {
         match (p, o) {
-            (IrContentPart::Text { text: t1 }, IrContentPart::Text { text: t2 }) => {
+            (IrContentPart::Text { text: t1, .. }, IrContentPart::Text { text: t2, .. }) => {
                 assert_eq!(t1, t2);
             }
             _ => panic!("content type mismatch"),
@@ -190,6 +196,7 @@ fn completions_tool_calls_request() {
             role: IrRole::User,
             content: vec![IrContentPart::Text {
                 text: "What's the weather?".into(),
+                citations: None,
             }],
             name: None,
             tool_call_id: None,

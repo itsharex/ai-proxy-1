@@ -62,7 +62,7 @@ impl FormatGenerator for ResponsesGenerator {
                             .content
                             .iter()
                             .filter_map(|p| match p {
-                                IrContentPart::Text { text } => Some(text.as_str()),
+                                IrContentPart::Text { text, .. } => Some(text.as_str()),
                                 _ => None,
                             })
                             .collect::<Vec<_>>()
@@ -333,7 +333,7 @@ fn extract_text_content(parts: &[IrContentPart]) -> String {
     parts
         .iter()
         .filter_map(|part| match part {
-            IrContentPart::Text { text } => Some(text.as_str()),
+            IrContentPart::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -344,7 +344,7 @@ fn extract_thinking_content(parts: &[IrContentPart]) -> String {
     parts
         .iter()
         .filter_map(|part| match part {
-            IrContentPart::Thinking { text } => Some(text.as_str()),
+            IrContentPart::Thinking { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -353,7 +353,7 @@ fn extract_thinking_content(parts: &[IrContentPart]) -> String {
 
 fn convert_message_content(parts: &[IrContentPart]) -> Value {
     if parts.len() == 1 {
-        if let Some(IrContentPart::Text { text }) = parts.first() {
+        if let Some(IrContentPart::Text { text, .. }) = parts.first() {
             return json!(text);
         }
     }
@@ -361,11 +361,11 @@ fn convert_message_content(parts: &[IrContentPart]) -> Value {
     let items: Vec<Value> = parts
         .iter()
         .map(|part| match part {
-            IrContentPart::Text { text } => json!({
+            IrContentPart::Text { text, .. } => json!({
                 "type": "input_text",
                 "text": text,
             }),
-            IrContentPart::Thinking { text } => json!({
+            IrContentPart::Thinking { text, .. } => json!({
                 "type": "input_text",
                 "text": text,
             }),

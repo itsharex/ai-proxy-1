@@ -265,7 +265,7 @@ fn extract_text_parts(parts: &[IrContentPart]) -> String {
     parts
         .iter()
         .filter_map(|part| match part {
-            IrContentPart::Text { text } => Some(text.as_str()),
+            IrContentPart::Text { text, .. } => Some(text.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
@@ -276,8 +276,8 @@ fn convert_gemini_parts(parts: &[IrContentPart]) -> Vec<Value> {
     parts
         .iter()
         .map(|part| match part {
-            IrContentPart::Text { text } => json!({ "text": text }),
-            IrContentPart::Thinking { text } => json!({ "text": text }),
+            IrContentPart::Text { text, .. } => json!({ "text": text }),
+            IrContentPart::Thinking { text, .. } => json!({ "text": text }),
             IrContentPart::Image { url, data, media_type } => {
                 if let Some(image_url) = url {
                     json!({

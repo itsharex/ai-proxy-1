@@ -12,6 +12,7 @@ pub fn create_router() -> Router {
         .route("/v1/chat/completions", post(handlers::handle_completions))
         .route("/v1/responses", post(handlers::handle_responses))
         .route("/v1/messages", post(handlers::handle_anthropic))
+        .route("/v1/messages/count_tokens", post(handlers::handle_anthropic_count_tokens))
         .route("/v1/models", get(handlers::handle_list_models))
         .route("/v1/models/:model", get(handlers::handle_get_model))
         .route("/v1beta/models", get(handlers::handle_gemini_list_models))

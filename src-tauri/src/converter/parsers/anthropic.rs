@@ -24,6 +24,7 @@ impl FormatParser for AnthropicParser {
                     role: IrRole::System,
                     content: vec![IrContentPart::Text {
                         text: system.to_string(),
+                        citations: None,
                     }],
                     name: None,
                     tool_call_id: None,
@@ -44,7 +45,7 @@ impl FormatParser for AnthropicParser {
                     role: IrRole::System,
                     content: system_texts
                         .into_iter()
-                        .map(|text| IrContentPart::Text { text })
+                        .map(|text| IrContentPart::Text { text, citations: None })
                         .collect(),
                     name: None,
                     tool_call_id: None,
@@ -254,11 +255,17 @@ impl FormatParser for AnthropicParser {
                     let cached = u["cache_read_input_tokens"].as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
+                    let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+                    let thinking = u.get("output_tokens_details")
+                        .and_then(|d| d["thinking_tokens"].as_u64())
+                        .unwrap_or(0);
                     IrUsage {
                         prompt_tokens: input as u32,
                         completion_tokens: output as u32,
                         total_tokens: (input + output + cached) as u32,
                         cached_tokens: cached as u32,
+                        cache_creation_input_tokens: cache_creation as u32,
+                        thinking_tokens: thinking as u32,
                     }
                 });
 
@@ -285,11 +292,14 @@ impl FormatParser for AnthropicParser {
                     let cached = u["cache_read_input_tokens"].as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
+                    let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
                     IrUsage {
                         prompt_tokens: input as u32,
                         completion_tokens: 0,
                         total_tokens: (input + cached) as u32,
                         cached_tokens: cached as u32,
+                        cache_creation_input_tokens: cache_creation as u32,
+                        thinking_tokens: 0,
                     }
                 });
 
@@ -356,15 +366,21 @@ impl FormatParser for AnthropicParser {
                 match block_type {
                     "text" => {
                         if let Some(text) = block["text"].as_str() {
+                            let citations = block.get("citations")
+                                .filter(|c| c.is_array())
+                                .cloned();
                             content_parts.push(IrContentPart::Text {
                                 text: text.to_string(),
+                                citations,
                             });
                         }
                     }
                     "thinking" => {
                         if let Some(text) = block["thinking"].as_str() {
+                            let signature = block["signature"].as_str().map(String::from);
                             content_parts.push(IrContentPart::Thinking {
                                 text: text.to_string(),
+                                signature,
                             });
                         }
                     }
@@ -419,11 +435,17 @@ impl FormatParser for AnthropicParser {
                 let cached = u["cache_read_input_tokens"].as_u64()
                     .or_else(|| u["cached_tokens"].as_u64())
                     .unwrap_or(0);
+                let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
+                let thinking = u.get("output_tokens_details")
+                    .and_then(|d| d["thinking_tokens"].as_u64())
+                    .unwrap_or(0);
                 IrUsage {
                     prompt_tokens: input as u32,
                     completion_tokens: output as u32,
                     total_tokens: (input + output + cached) as u32,
                     cached_tokens: cached as u32,
+                    cache_creation_input_tokens: cache_creation as u32,
+                    thinking_tokens: thinking as u32,
                 }
             })
             .unwrap_or(IrUsage {
@@ -431,13 +453,18 @@ impl FormatParser for AnthropicParser {
                 completion_tokens: 0,
                 total_tokens: 0,
                 cached_tokens: 0,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             });
+
+        let stop_sequence = body["stop_sequence"].as_str().map(String::from);
 
         Ok(IrResponse {
             id,
             model,
             message,
             finish_reason: stop_reason,
+            stop_sequence,
             usage,
         })
     }
@@ -464,7 +491,7 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
         if let Some(content) = msg.get("content") {
             if let Some(text) = content.as_str() {
                 if !text.is_empty() {
-                    content_parts.push(IrContentPart::Text { text: text.to_string() });
+                    content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
                 }
             } else if let Some(arr) = content.as_array() {
                 for part in arr {
@@ -472,12 +499,13 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
                     match part_type {
                         "text" => {
                             if let Some(text) = part["text"].as_str() {
-                                content_parts.push(IrContentPart::Text { text: text.to_string() });
+                                content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
                             }
                         }
                         "thinking" => {
                             if let Some(text) = part["thinking"].as_str() {
-                                content_parts.push(IrContentPart::Thinking { text: text.to_string() });
+                                let signature = part["signature"].as_str().map(String::from);
+                                content_parts.push(IrContentPart::Thinking { text: text.to_string(), signature });
                             }
                         }
                         "tool_use" => {
@@ -512,7 +540,7 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
     if let Some(content) = msg.get("content") {
         if let Some(text) = content.as_str() {
             if !text.is_empty() {
-                pending_user_parts.push(IrContentPart::Text { text: text.to_string() });
+                pending_user_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
             }
         } else if let Some(arr) = content.as_array() {
             for part in arr {
@@ -555,7 +583,7 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
 
                         results.push(IrMessage {
                             role: IrRole::Tool,
-                            content: vec![IrContentPart::Text { text: result_content }],
+                            content: vec![IrContentPart::Text { text: result_content, citations: None }],
                             name: None,
                             tool_call_id: Some(tool_use_id),
                             tool_calls: None,
@@ -563,7 +591,7 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
                     }
                     "text" => {
                         if let Some(text) = part["text"].as_str() {
-                            pending_user_parts.push(IrContentPart::Text { text: text.to_string() });
+                            pending_user_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
                         }
                     }
                     "image" => {

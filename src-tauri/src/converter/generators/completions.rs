@@ -42,7 +42,7 @@ impl FormatGenerator for CompletionsGenerator {
             let content_parts: Vec<IrContentPart> = if msg.role == IrRole::Assistant {
                 let thinking_text: String = msg.content.iter()
                     .filter_map(|p| match p {
-                        IrContentPart::Thinking { text } => Some(text.as_str()),
+                        IrContentPart::Thinking { text, .. } => Some(text.as_str()),
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -61,7 +61,7 @@ impl FormatGenerator for CompletionsGenerator {
             };
 
             if content_parts.len() == 1 {
-                if let Some(IrContentPart::Text { text }) = content_parts.first() {
+                if let Some(IrContentPart::Text { text, .. }) = content_parts.first() {
                     message["content"] = json!(text);
                 } else {
                     message["content"] = json!(serialize_content_parts(&content_parts));
@@ -292,7 +292,7 @@ impl FormatGenerator for CompletionsGenerator {
         });
 
         if ir.message.content.len() == 1 {
-            if let Some(IrContentPart::Text { text }) = ir.message.content.first() {
+            if let Some(IrContentPart::Text { text, .. }) = ir.message.content.first() {
                 message["content"] = json!(text);
             } else {
                 message["content"] = json!(serialize_content_parts(&ir.message.content));
@@ -368,11 +368,11 @@ fn serialize_content_parts(parts: &[IrContentPart]) -> Vec<Value> {
     parts
         .iter()
         .map(|part| match part {
-            IrContentPart::Text { text } => json!({
+            IrContentPart::Text { text, .. } => json!({
                 "type": "text",
                 "text": text,
             }),
-            IrContentPart::Thinking { text } => json!({
+            IrContentPart::Thinking { text, .. } => json!({
                 "type": "text",
                 "text": text,
             }),

@@ -31,7 +31,7 @@ impl FormatParser for GeminiParser {
                     role: IrRole::System,
                     content: system_texts
                         .into_iter()
-                        .map(|text| IrContentPart::Text { text })
+                        .map(|text| IrContentPart::Text { text, citations: None })
                         .collect(),
                     name: None,
                     tool_call_id: None,
@@ -203,6 +203,8 @@ impl FormatParser for GeminiParser {
                 completion_tokens: u["candidatesTokenCount"].as_u64()? as u32,
                 total_tokens: u["totalTokenCount"].as_u64()? as u32,
                 cached_tokens: u["cachedContentTokenCount"].as_u64().unwrap_or(0) as u32,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             })
         });
 
@@ -232,6 +234,7 @@ impl FormatParser for GeminiParser {
                 if let Some(text) = part["text"].as_str() {
                     content_parts.push(IrContentPart::Text {
                         text: text.to_string(),
+                        citations: None,
                     });
                 }
 
@@ -271,12 +274,16 @@ impl FormatParser for GeminiParser {
                 completion_tokens: u["candidatesTokenCount"].as_u64().unwrap_or(0) as u32,
                 total_tokens: u["totalTokenCount"].as_u64().unwrap_or(0) as u32,
                 cached_tokens: u["cachedContentTokenCount"].as_u64().unwrap_or(0) as u32,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             })
             .unwrap_or(IrUsage {
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 total_tokens: 0,
                 cached_tokens: 0,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             });
 
         Ok(IrResponse {
@@ -284,6 +291,7 @@ impl FormatParser for GeminiParser {
             model: None,
             message,
             finish_reason,
+            stop_sequence: None,
             usage,
         })
     }
@@ -312,6 +320,7 @@ fn parse_gemini_content(content: &Value) -> Result<IrMessage, ProxyError> {
             if let Some(text) = part["text"].as_str() {
                 content_parts.push(IrContentPart::Text {
                     text: text.to_string(),
+                    citations: None,
                 });
             }
 

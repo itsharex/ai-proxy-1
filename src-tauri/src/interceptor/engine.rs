@@ -128,6 +128,7 @@ impl InterceptorEngine {
                     role: crate::converter::ir::IrRole::System,
                     content: vec![crate::converter::ir::IrContentPart::Text {
                         text: prompt.clone(),
+                        citations: None,
                     }],
                     name: None,
                     tool_call_id: None,
@@ -148,6 +149,7 @@ impl InterceptorEngine {
                         first_system.content.push(
                             crate::converter::ir::IrContentPart::Text {
                                 text: format!("\n\n{}", prompt),
+                                citations: None,
                             },
                         );
                     }

@@ -31,12 +31,14 @@ impl FormatParser for CompletionsParser {
                 let content = if m["content"].is_string() {
                     vec![IrContentPart::Text {
                         text: m["content"].as_str().unwrap().to_string(),
+                        citations: None,
                     }]
                 } else if let Some(arr) = m["content"].as_array() {
                     arr.iter()
                         .filter_map(|p| match p["type"].as_str() {
                             Some("text") => Some(IrContentPart::Text {
                                 text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                citations: None,
                             }),
                             Some("image_url") => {
                                 let url_str = p["image_url"].get("url").and_then(|v| v.as_str()).unwrap_or("");
@@ -276,6 +278,8 @@ impl FormatParser for CompletionsParser {
                 cached_tokens: u.get("prompt_tokens_details")
                     .and_then(|d| d["cached_tokens"].as_u64())
                     .unwrap_or(0) as u32,
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
             }),
             error: None,
         }))
@@ -302,13 +306,14 @@ impl FormatParser for CompletionsParser {
         let mut content = if msg["content"].is_string() {
             let text = msg["content"].as_str().unwrap_or("").to_string();
             if text.is_empty() { vec![] } else {
-                vec![IrContentPart::Text { text }]
+                vec![IrContentPart::Text { text, citations: None }]
             }
         } else if let Some(arr) = msg["content"].as_array() {
             arr.iter()
                 .filter_map(|p| match p["type"].as_str() {
                     Some("text") => Some(IrContentPart::Text {
                         text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        citations: None,
                     }),
                     Some("refusal") => None,
                     _ => None,
@@ -320,7 +325,7 @@ impl FormatParser for CompletionsParser {
 
         if let Some(reasoning) = msg.get("reasoning_content").and_then(|v| v.as_str()) {
             if !reasoning.is_empty() {
-                content.insert(0, IrContentPart::Thinking { text: reasoning.to_string() });
+                content.insert(0, IrContentPart::Thinking { text: reasoning.to_string(), signature: None });
             }
         }
 
@@ -335,6 +340,7 @@ impl FormatParser for CompletionsParser {
                 tool_calls,
             },
             finish_reason: choice["finish_reason"].as_str().map(String::from),
+            stop_sequence: None,
             usage: body.get("usage").map(|u| IrUsage {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
                 completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
@@ -342,7 +348,9 @@ impl FormatParser for CompletionsParser {
                 cached_tokens: u.get("prompt_tokens_details")
                     .and_then(|d| d["cached_tokens"].as_u64())
                     .unwrap_or(0) as u32,
-            }).unwrap_or(IrUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0 }),
+                cache_creation_input_tokens: 0,
+                thinking_tokens: 0,
+            }).unwrap_or(IrUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0, cache_creation_input_tokens: 0, thinking_tokens: 0 }),
         })
     }
 }
