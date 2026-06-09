@@ -174,10 +174,17 @@ async fn handle_proxy(
     extract_headers(&parts.headers, &mut extra_headers);
 
     let path = parts.uri.path().to_string();
+    let client_model = ir_request.model.clone();
 
     if let Err(e) = InterceptorEngine::execute_pre_rules(&mut ir_request, &path, &mut extra_headers).await {
         error!("Interceptor error: {}", e);
     }
+
+    let log_model = if client_model != ir_request.model {
+        format!("{} -> {}", client_model, ir_request.model)
+    } else {
+        ir_request.model.clone()
+    };
 
     let route = match ProviderManager::find_for_model(&ir_request.model).await {
         Ok(r) => {
@@ -198,7 +205,7 @@ async fn handle_proxy(
             error!("Route not found for model '{}': {}", ir_request.model, e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, "proxy", &client_format,
-                &ir_request.model, ir_request.stream, 404, start.elapsed().as_millis() as i64,
+                &log_model, ir_request.stream, 404, start.elapsed().as_millis() as i64,
                 Some(&format!("route not found: {}", e)), 0, 0, 0, None,
             ).await {
                 tracing::error!("Early error logging failed: {}", le);
@@ -213,7 +220,7 @@ async fn handle_proxy(
             let err_msg = format!("key rotation error: {}", e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, &route.provider_name, &route.target_format,
-                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
                 Some(&err_msg), 0, 0, 0, None,
             ).await {
                 tracing::error!("Early error logging failed: {}", le);
@@ -229,7 +236,7 @@ async fn handle_proxy(
     } else {
         if let Err(le) = log_request_entry(
             &request_id, &client_format, &route.provider_name, &route.target_format,
-            &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+            &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
             Some("invalid nonce length"), 0, 0, 0, None,
         ).await {
             tracing::error!("Early error logging failed: {}", le);
@@ -243,7 +250,7 @@ async fn handle_proxy(
             let err_msg = format!("key decryption error: {}", e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, &route.provider_name, &route.target_format,
-                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
                 Some(&err_msg), 0, 0, 0, None,
             ).await {
                 tracing::error!("Early error logging failed: {}", le);
@@ -284,7 +291,7 @@ async fn handle_proxy(
             let err_msg = format!("request generation error: {}", e);
             if let Err(le) = log_request_entry(
                 &request_id, &client_format, &route.provider_name, &route.target_format,
-                &ir_request.model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
+                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
                 Some(&err_msg), 0, 0, 0, None,
             ).await {
                 tracing::error!("Early error logging failed: {}", le);
@@ -380,7 +387,7 @@ async fn handle_proxy(
                         &client_format,
                         &route.provider_name,
                         &route.target_format,
-                        &ir_request.model,
+                        &log_model,
                         ir_request.stream,
                         502,
                         start.elapsed().as_millis() as i64,
@@ -456,7 +463,7 @@ async fn handle_proxy(
                 &client_format,
                 &route.provider_name,
                 &route.target_format,
-                &ir_request.model,
+                &log_model,
                 ir_request.stream,
                 status.as_u16(),
                 start.elapsed().as_millis() as i64,
@@ -507,7 +514,7 @@ async fn handle_proxy(
             &client_format,
             &route.provider_name,
             &route.target_format,
-            &ir_request.model,
+            &log_model,
             ir_request.stream,
             status_code,
             start.elapsed().as_millis() as i64,
@@ -627,7 +634,7 @@ async fn handle_proxy(
             &client_format,
             &route.provider_name,
             &route.target_format,
-            &ir_request.model,
+            &log_model,
             false,
             200,
             start.elapsed().as_millis() as i64,
@@ -664,6 +671,7 @@ async fn handle_proxy(
             provider_name: route.provider_name.clone(),
             provider_format: route.target_format.clone(),
             model: ir_request.model.clone(),
+            log_model: log_model.clone(),
             start: start.clone(),
             prompt_tokens: AtomicU32::new(0),
             completion_tokens: AtomicU32::new(0),
@@ -1720,7 +1728,7 @@ async fn handle_proxy(
                 &client_format_clone,
                 &route.provider_name,
                 &route.target_format,
-                &target_model,
+                &log_model,
                 true,
                 200,
                 elapsed,
@@ -2034,6 +2042,7 @@ struct StreamLogState {
     provider_name: String,
     provider_format: ClientFormat,
     model: String,
+    log_model: String,
     start: std::time::Instant,
     prompt_tokens: AtomicU32,
     completion_tokens: AtomicU32,
@@ -2073,7 +2082,7 @@ impl Drop for StreamLoggingGuard {
                 &state.client_format,
                 &state.provider_name,
                 &state.provider_format,
-                &state.model,
+                &state.log_model,
                 true,
                 status_code,
                 elapsed,
