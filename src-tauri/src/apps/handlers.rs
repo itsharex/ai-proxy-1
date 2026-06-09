@@ -5,8 +5,6 @@ use crate::apps::config;
 use crate::apps::launcher;
 use crate::apps::types::{AppConfig, AppType, DbAppConfig, LaunchRequest, SetPathRequest};
 use crate::db::get_pool;
-use crate::key::rotation::{KeyRotation, RotationStrategy};
-use crate::key::store::decrypt_api_key;
 use crate::server::api::{ok, err_json, ApiError, ApiResponse};
 
 fn build_model_config(body: &LaunchRequest) -> Option<String> {
@@ -183,26 +181,12 @@ pub async fn launch_app(
     .flatten()
     .unwrap_or(272000) as u64;
 
-    // Resolve an API key: Claude uses upstream anthropic key; Codex uses proxy auth key
-    let api_key = if app_type == AppType::ClaudeDesktop {
-        resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
-            "{}: 代理认证密钥解析失败 - {}",
-            app_type.display_name(), e
-        )))?
-    } else if app_type.is_claude() {
-        resolve_api_key_for_claude(&app_type).await.map_err(|e| {
-            tracing::error!("API key resolution failed for {}: {}", app_type.display_name(), e);
-            err_json(format!(
-                "{}: Anthropic API Key 解析失败 - 请确认已配置 anthropic 供应商并添加了有效的 API Key ({})",
-                app_type.display_name(), e
-            ))
-        })?
-    } else {
-        resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
-            "{}: 代理认证密钥解析失败 - {}",
-            app_type.display_name(), e
-        )))?
-    };
+    // Resolve API key: all apps use the proxy auth key for authentication against the proxy.
+    // The proxy then handles format conversion and upstream provider key rotation transparently.
+    let api_key = resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
+        "{}: 代理认证密钥解析失败 - 请确认已在设置中配置 API Key ({})",
+        app_type.display_name(), e
+    )))?;
 
     let write_result = if app_type == AppType::OpenCodeCli {
         let models = body.models.as_deref().unwrap_or(&[]);
@@ -352,24 +336,6 @@ pub async fn set_app_path(
     }
 
     Ok(ok(()))
-}
-
-async fn resolve_api_key_for_claude(app_type: &AppType) -> Result<String, String> {
-    let _ = app_type; // Both Claude CLI and Desktop use the anthropic provider
-    let provider_id = "anthropic";
-
-    let selected_key = KeyRotation::get_next_key(provider_id, &RotationStrategy::LeastUsed)
-        .await
-        .map_err(|e| format!("Failed to get API key: {}", e))?;
-
-    let nonce_array: [u8; 12] = selected_key
-        .nonce
-        .as_slice()
-        .try_into()
-        .map_err(|_| "Invalid nonce length".to_string())?;
-
-    decrypt_api_key(&selected_key.encrypted_key, &nonce_array)
-        .map_err(|e| format!("Failed to decrypt API key: {}", e))
 }
 
 async fn sync_codex_route_rule(model: &str) {
