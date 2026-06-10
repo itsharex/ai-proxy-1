@@ -592,3 +592,128 @@ pub async fn cleanup_single_broken(pool: &SqlitePool, skill_id: &str) -> Result<
 
     Ok(format!("已清理: {}", skill.name))
 }
+
+/// Copy a non-global, non-symlink skill to the global source
+pub async fn copy_skill_to_global(
+    pool: &SqlitePool,
+    skill_id: &str,
+    force: bool,
+) -> Result<Skill, (String, Option<super::types::CopyConflictInfo>)> {
+    let skill: Skill = sqlx::query_as("SELECT * FROM skills WHERE id = ?")
+        .bind(skill_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| (format!("技能不存在: {}", e), None))?;
+
+    if skill.is_symlink {
+        return Err(("符号链接技能不需要复制到全局源".to_string(), None));
+    }
+
+    let source: SkillSource = sqlx::query_as("SELECT * FROM skill_sources WHERE id = ?")
+        .bind(&skill.source_id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| (format!("技能源不存在: {}", e), None))?;
+
+    if source.is_global {
+        return Err(("全局源中的技能不需要复制".to_string(), None));
+    }
+
+    let global_source: SkillSource = sqlx::query_as(
+        "SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(|e| (format!("全局技能库未配置: {}", e), None))?;
+
+    let skill_name = Path::new(&skill.skill_path)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let target_dir = Path::new(&global_source.path).join(&skill_name);
+
+    if target_dir.exists() || target_dir.is_symlink() {
+        if !force {
+            // Find the existing skill in global source
+            let existing: Option<Skill> = sqlx::query_as(
+                "SELECT * FROM skills WHERE source_id = ? AND skill_path LIKE ?"
+            )
+            .bind(&global_source.id)
+            .bind(format!("%/{}", skill_name))
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| (e.to_string(), None))?;
+
+            let conflict = existing.map(|s| super::types::CopyConflictInfo {
+                existing_skill_id: s.id,
+                existing_skill_name: s.name,
+            }).unwrap_or_else(|| super::types::CopyConflictInfo {
+                existing_skill_id: String::new(),
+                existing_skill_name: skill_name.clone(),
+            });
+
+            return Err(("全局源已存在同名技能".to_string(), Some(conflict)));
+        }
+        // force: remove existing target
+        if target_dir.is_symlink() {
+            fs::remove_file(&target_dir).map_err(|e| (format!("删除已存在链接失败: {}", e), None))?;
+        } else if target_dir.is_dir() {
+            fs::remove_dir_all(&target_dir).map_err(|e| (format!("删除已存在目录失败: {}", e), None))?;
+        }
+        // Remove existing DB record if any
+        sqlx::query("DELETE FROM skills WHERE source_id = ? AND skill_path LIKE ?")
+            .bind(&global_source.id)
+            .bind(format!("%/{}", skill_name))
+            .execute(pool)
+            .await
+            .map_err(|e| (e.to_string(), None))?;
+    }
+
+    // Recursively copy directory
+    copy_dir_recursive(Path::new(&skill.skill_path), &target_dir)
+        .map_err(|e| (e, None))?;
+
+    // Scan to update database
+    scan_all(pool).await.map_err(|e| (e, None))?;
+
+    // Find the newly created skill
+    let new_skill: Skill = sqlx::query_as(
+        "SELECT * FROM skills WHERE source_id = ? AND skill_path = ?"
+    )
+    .bind(&global_source.id)
+    .bind(target_dir.to_string_lossy().to_string())
+    .fetch_one(pool)
+    .await
+    .map_err(|e| (format!("复制后未找到技能: {}", e), None))?;
+
+    Ok(new_skill)
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.is_dir() {
+        return Err(format!("源路径不是目录: {}", src.display()));
+    }
+    fs::create_dir_all(dst).map_err(|e| format!("创建目标目录失败: {}", e))?;
+
+    for entry in fs::read_dir(src).map_err(|e| format!("读取源目录失败: {}", e))? {
+        let entry = entry.map_err(|e| format!("读取目录项失败: {}", e))?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+
+        if src_path.is_symlink() {
+            let link_target = fs::read_link(&src_path)
+                .map_err(|e| format!("读取符号链接失败: {}", e))?;
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&link_target, &dst_path)
+                .map_err(|e| format!("创建符号链接失败: {}", e))?;
+        } else if src_path.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else {
+            fs::copy(&src_path, &dst_path)
+                .map_err(|e| format!("复制文件失败: {}", e))?;
+        }
+    }
+    Ok(())
+}

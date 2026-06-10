@@ -2,8 +2,6 @@
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { NTag, NButton, NButtonGroup, NSpace, NSwitch, NIcon, NEmpty } from 'naive-ui'
 import { PauseOutline, PlayOutline, TrashOutline } from '@vicons/ionicons5'
-import { RecycleScroller } from 'vue-virtual-scroller'
-import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
 import { api, getBaseUrl } from '../api'
 
 const MAX_DISPLAY_LEN = 2000
@@ -21,7 +19,7 @@ const logs = ref<LogEntry[]>([])
 const levelFilter = ref<string>('INFO')
 const paused = ref(false)
 const autoScroll = ref(true)
-const scroller = ref<any>(null)
+const scroller = ref<HTMLElement | null>(null)
 let ws: WebSocket | null = null
 let uidCounter = 0
 
@@ -59,8 +57,7 @@ function processEntry(raw: any): LogEntry {
 function scrollToBottom() {
   if (!autoScroll.value || !scroller.value) return
   nextTick(() => {
-    const el = scroller.value?.$el as HTMLElement
-    if (el) el.scrollTop = el.scrollHeight
+    if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
   })
 }
 
@@ -159,27 +156,21 @@ onUnmounted(() => {
       </n-space>
     </n-space>
 
-    <RecycleScroller
+    <div
       v-if="filteredLogs.length > 0"
       ref="scroller"
       class="log-scroller"
-      :items="filteredLogs"
-      :item-size="24"
-      key-field="_uid"
-      :buffer="200"
       style="flex: 1; background: #1e1e1e; border-radius: 4px; padding: 8px; font-family: monospace; font-size: 12px; line-height: 1.6;"
     >
-      <template #default="{ item: log }">
-        <div style="display: flex; gap: 8px; padding: 1px 0;">
-          <n-tag :type="levelColor(log.level)" size="small" :bordered="false" style="min-width: 56px; justify-content: center; font-size: 11px;">
-            {{ log.level }}
-          </n-tag>
-          <span style="color: #888; white-space: nowrap;">{{ formatTimestamp(log.timestamp) }}</span>
-          <span style="color: #6a9fb5; white-space: nowrap;">{{ log.target }}</span>
-          <span :style="messageStyle(log.level)">{{ log.displayMessage }}</span>
-        </div>
-      </template>
-    </RecycleScroller>
+      <div v-for="log in filteredLogs" :key="log._uid" style="display: flex; gap: 8px; padding: 1px 0;">
+        <n-tag :type="levelColor(log.level)" size="small" :bordered="false" style="min-width: 56px; justify-content: center; font-size: 11px;">
+          {{ log.level }}
+        </n-tag>
+        <span style="color: #888; white-space: nowrap;">{{ formatTimestamp(log.timestamp) }}</span>
+        <span style="color: #6a9fb5; white-space: nowrap;">{{ log.target }}</span>
+        <span :style="messageStyle(log.level)">{{ log.displayMessage }}</span>
+      </div>
+    </div>
     <div
       v-else
       ref="scroller"
@@ -195,8 +186,5 @@ onUnmounted(() => {
 <style scoped>
 .log-scroller {
   overflow-y: auto;
-}
-.log-scroller :deep(.vue-recycle-scroller__item-wrapper) {
-  overflow: visible;
 }
 </style>

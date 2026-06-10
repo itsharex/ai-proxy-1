@@ -3,6 +3,17 @@ import { invoke } from '@tauri-apps/api/core'
 
 const DEFAULT_PROXY_PORT = 7860
 
+export class ApiError extends Error {
+  status: number
+  data: unknown
+  constructor(message: string, status: number, data?: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.data = data
+  }
+}
+
 export const apiState = reactive({
   baseUrl: '',
   proxyPort: DEFAULT_PROXY_PORT,
@@ -117,7 +128,8 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
-    throw new Error(body.error || `API error: ${res.status}`)
+    const err = new ApiError(body.error || `API error: ${res.status}`, res.status, body.data)
+    throw err
   }
   let body: { success?: boolean; error?: string; data?: T }
   try {
@@ -125,7 +137,7 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (error) {
     throw error
   }
-  if (!body.success) throw new Error(body.error || 'Unknown error')
+  if (!body.success) throw new ApiError(body.error || 'Unknown error', res.status, body.data)
   return body.data as T
 }
 

@@ -75,9 +75,13 @@
           />
         </n-form-item>
         <n-form-item v-if="formData.action.type === 'replace_model'" label="目标模型">
-          <n-input
+          <n-select
             v-model:value="formData.action.model"
-            placeholder="例如: claude-3-opus"
+            :options="modelOptions"
+            placeholder="选择模型"
+            filterable
+            clearable
+            tag
           />
         </n-form-item>
         <template v-if="formData.action.type === 'set_header'">
@@ -175,7 +179,7 @@
 import { ref, computed, watch, onMounted, h } from 'vue'
 import { api } from '../api'
 import { NTag, NPopconfirm, NButton, NSwitch, NSpace, useMessage } from 'naive-ui'
-import type { InterceptorRule, RuleCondition, RuleAction } from '../types'
+import type { InterceptorRule, RuleCondition, RuleAction, Provider } from '../types'
 
 const message = useMessage()
 const loading = ref(false)
@@ -211,6 +215,29 @@ const parameterOptions = [
   { label: 'max_tokens', value: 'max_tokens' },
   { label: 'stream', value: 'stream' },
 ]
+
+const allModels = ref<{ model_name: string }[]>([])
+
+const modelOptions = computed(() => {
+  const seen = new Set<string>()
+  const options: { label: string; value: string }[] = []
+  for (const m of allModels.value) {
+    if (!seen.has(m.model_name)) {
+      seen.add(m.model_name)
+      options.push({ label: m.model_name, value: m.model_name })
+    }
+  }
+  return options
+})
+
+async function fetchModels() {
+  try {
+    const providers = await api<Provider[]>('/api/providers')
+    allModels.value = providers.flatMap((p) => p.models)
+  } catch (err) {
+    console.error('Failed to load models:', err)
+  }
+}
 
 const formData = ref({
   name: '',
@@ -444,6 +471,7 @@ function openAddModal() {
   isEditing.value = false
   editingId.value = ''
   formData.value = getDefaultForm()
+  fetchModels()
   showModal.value = true
 }
 
@@ -456,6 +484,7 @@ function openEditModal(row: InterceptorRule) {
   formData.value.priority = row.priority
   loadConditionToForm(row.condition)
   loadActionToForm(row.action)
+  fetchModels()
   showModal.value = true
 }
 

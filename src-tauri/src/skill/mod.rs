@@ -22,4 +22,5 @@ pub fn skill_routes() -> Router {
         .route("/scan", routing::post(handlers::scan))
         .route("/cleanup-broken", routing::post(handlers::cleanup_broken_symlinks))
         .route("/:id/cleanup-broken", routing::post(handlers::cleanup_single_broken))
+        .route("/:id/copy-to-global", routing::post(handlers::copy_to_global))
 }

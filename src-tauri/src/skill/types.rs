@@ -87,3 +87,14 @@ pub struct MarketplaceInstallBody {
     pub source: String,
     pub skill_name: String,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CopyToGlobalQuery {
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CopyConflictInfo {
+    pub existing_skill_id: String,
+    pub existing_skill_name: String,
+}

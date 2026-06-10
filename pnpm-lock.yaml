@@ -14,9 +14,15 @@ importers:
       '@codemirror/lang-markdown':
         specifier: ^6.5.0
         version: 6.5.0
+      '@codemirror/state':
+        specifier: ^6.6.0
+        version: 6.6.0
       '@codemirror/theme-one-dark':
         specifier: ^6.1.3
         version: 6.1.3
+      '@codemirror/view':
+        specifier: ^6.43.1
+        version: 6.43.1
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.0
@@ -137,8 +143,8 @@ packages:
   '@codemirror/theme-one-dark@6.1.3':
     resolution: {integrity: sha512-NzBdIvEJmx6fjeremiGp3t/okrLPYT0d9orIc7AFun8oZcRk58aejkqhv6spnz4MLAevrKNPMQYXEWMg4s+sKA==}
 
-  '@codemirror/view@6.43.0':
-    resolution: {integrity: sha512-V7ZCLQO3Jus9hzh2jVCCPW3mO4IBMr43O37PqSUYautJSnnJF41YlgLw21x0fLJTYvJ+Vkm6Gp+qKGH9pltgXA==}
+  '@codemirror/view@6.43.1':
+    resolution: {integrity: sha512-+BIjw/AG3tDQ4pJgTLPYdAW25eDE66YsvM4LKyVPgGzVgZ4a9Wj1SRX8kPVKgBDdPt8oHtZ15F0qx7p0oOHdHw==}
 
   '@css-render/plugin-bem@0.15.14':
     resolution: {integrity: sha512-QK513CJ7yEQxm/P3EwsI+d+ha8kSOcjGvD6SevM41neEMxdULE+18iuQK6tEChAWMOQNQPLG/Rw3Khb69r5neg==}
@@ -962,14 +968,14 @@ snapshots:
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
 
   '@codemirror/commands@6.10.3':
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
 
   '@codemirror/lang-css@6.3.1':
@@ -987,7 +993,7 @@ snapshots:
       '@codemirror/lang-javascript': 6.2.5
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/css': 1.3.3
       '@lezer/html': 1.3.13
@@ -998,7 +1004,7 @@ snapshots:
       '@codemirror/language': 6.12.3
       '@codemirror/lint': 6.9.6
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/javascript': 1.5.4
 
@@ -1013,14 +1019,14 @@ snapshots:
       '@codemirror/lang-html': 6.4.11
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/markdown': 1.6.4
 
   '@codemirror/language@6.12.3':
     dependencies:
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/common': 1.5.2
       '@lezer/highlight': 1.2.3
       '@lezer/lr': 1.4.10
@@ -1029,13 +1035,13 @@ snapshots:
   '@codemirror/lint@6.9.6':
     dependencies:
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
   '@codemirror/search@6.7.0':
     dependencies:
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       crelt: 1.0.6
 
   '@codemirror/state@6.6.0':
@@ -1046,10 +1052,10 @@ snapshots:
     dependencies:
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       '@lezer/highlight': 1.2.3
 
-  '@codemirror/view@6.43.0':
+  '@codemirror/view@6.43.1':
     dependencies:
       '@codemirror/state': 6.6.0
       crelt: 1.0.6
@@ -1472,7 +1478,7 @@ snapshots:
       '@codemirror/lint': 6.9.6
       '@codemirror/search': 6.7.0
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
 
   copy-anything@4.0.5:
     dependencies:
@@ -1702,7 +1708,7 @@ snapshots:
       '@codemirror/commands': 6.10.3
       '@codemirror/language': 6.12.3
       '@codemirror/state': 6.6.0
-      '@codemirror/view': 6.43.0
+      '@codemirror/view': 6.43.1
       codemirror: 6.0.2
       vue: 3.5.34(typescript@5.6.3)
 

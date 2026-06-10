@@ -258,11 +258,42 @@
         </n-spin>
       </n-space>
     </n-modal>
+
+    <!-- Diff / Conflict Modal -->
+    <n-modal
+      v-model:show="showDiffModal"
+      preset="card"
+      title="技能内容对比"
+      style="width: 90vw; max-width: 1200px"
+      :bordered="false"
+      :mask-closable="false"
+    >
+      <template #header-extra>
+        <n-space>
+          <n-button @click="destroyDiffEditors(); showDiffModal = false">取消</n-button>
+          <n-button type="error" :loading="copyForceLoading" @click="handleForceCopy">
+            覆盖并复制
+          </n-button>
+        </n-space>
+      </template>
+      <n-spin :show="diffLoading">
+        <div style="display: flex; gap: 16px;">
+          <div style="flex: 1; min-width: 0;">
+            <n-text strong>源技能 ({{ diffSourceName }})</n-text>
+            <div ref="diffSourceCmRef" class="diff-cm-container"></div>
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <n-text strong>全局源同名技能 ({{ diffTargetName }})</n-text>
+            <div ref="diffTargetCmRef" class="diff-cm-container"></div>
+          </div>
+        </div>
+      </n-spin>
+    </n-modal>
   </n-space>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, h, onMounted } from 'vue'
+import { ref, computed, h, onMounted, nextTick } from 'vue'
 import {
   NTag,
   NPopconfirm,
@@ -274,10 +305,12 @@ import {
   useDialog,
 } from 'naive-ui'
 import { api } from '../api'
-import { Codemirror } from 'vue-codemirror'
+import { ApiError } from '../api'
 import { basicSetup } from 'codemirror'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { EditorView } from '@codemirror/view'
+import { EditorState } from '@codemirror/state'
 import { ExpandOutline, ContractOutline } from '@vicons/ionicons5'
 import type {
   SkillSourceWithCount,
@@ -348,6 +381,76 @@ const marketplaceLoading = ref(false)
 const marketplaceSearched = ref(false)
 const marketplaceResults = ref<MarketplaceSkill[]>([])
 const marketplaceInstalling = ref<string | null>(null)
+
+// Diff / Conflict Modal
+const showDiffModal = ref(false)
+const diffLoading = ref(false)
+const copyForceLoading = ref(false)
+const diffSourceContent = ref('')
+const diffTargetContent = ref('')
+const diffSourceName = ref('')
+const diffTargetName = ref('')
+const conflictSourceSkillId = ref<string | null>(null)
+const conflictExistingSkillId = ref<string | null>(null)
+
+// Diff CodeMirror refs
+const diffSourceCmRef = ref<HTMLElement | null>(null)
+const diffTargetCmRef = ref<HTMLElement | null>(null)
+let diffSourceView: EditorView | null = null
+let diffTargetView: EditorView | null = null
+let syncScrollEnabled = true
+
+function createDiffEditor(container: HTMLElement | null, content: string): EditorView | null {
+  if (!container) return null
+  const state = EditorState.create({
+    doc: content,
+    extensions: [
+      basicSetup,
+      markdown(),
+      oneDark,
+      EditorView.lineWrapping,
+      EditorState.readOnly.of(true),
+    ],
+  })
+  const view = new EditorView({
+    state,
+    parent: container,
+  })
+  return view
+}
+
+function destroyDiffEditors() {
+  diffSourceView?.destroy()
+  diffTargetView?.destroy()
+  diffSourceView = null
+  diffTargetView = null
+}
+
+function setupSyncScroll() {
+  if (!diffSourceView || !diffTargetView) return
+
+  const sourceScroller = diffSourceView.scrollDOM
+  const targetScroller = diffTargetView.scrollDOM
+
+  const syncFromSource = () => {
+    if (!syncScrollEnabled) return
+    syncScrollEnabled = false
+    targetScroller.scrollTop = sourceScroller.scrollTop
+    targetScroller.scrollLeft = sourceScroller.scrollLeft
+    syncScrollEnabled = true
+  }
+
+  const syncFromTarget = () => {
+    if (!syncScrollEnabled) return
+    syncScrollEnabled = false
+    sourceScroller.scrollTop = targetScroller.scrollTop
+    sourceScroller.scrollLeft = targetScroller.scrollLeft
+    syncScrollEnabled = true
+  }
+
+  sourceScroller.addEventListener('scroll', syncFromSource)
+  targetScroller.addEventListener('scroll', syncFromTarget)
+}
 
 interface MarketplaceSkill {
   id: string
@@ -473,6 +576,7 @@ const columns = [
       const source = sources.value.find((s) => s.id === row.source_id)
       const isGlobal = source ? toBool(source.is_global) : false
       const isSymlink = toBool(row.is_symlink)
+      const isBroken = toBool(row.is_broken_symlink)
 
       const buttons: ReturnType<typeof h>[] = []
 
@@ -483,6 +587,17 @@ const columns = [
             NButton,
             { size: 'small', quaternary: true, type: 'primary', onClick: () => openInstallTargetModal(row) },
             () => '安装到...'
+          )
+        )
+      }
+
+      // Copy to global (non-global, non-symlink, non-broken)
+      if (!isGlobal && !isSymlink && !isBroken) {
+        buttons.push(
+          h(
+            NButton,
+            { size: 'small', quaternary: true, type: 'success', onClick: () => handleCopyToGlobal(row) },
+            () => '复制到全局'
           )
         )
       }
@@ -514,7 +629,7 @@ const columns = [
       }
 
       // Uninstall (symlink only) or Delete
-      if (isSymlink && !toBool(row.is_broken_symlink)) {
+      if (isSymlink && !isBroken) {
         buttons.push(
           h(
             NPopconfirm,
@@ -984,6 +1099,76 @@ async function handleCleanupSingle(skillId: string) {
   }
 }
 
+// ---- Copy to Global Source ----
+
+async function handleCopyToGlobal(skill: Skill) {
+  try {
+    await api(`/api/skills/${skill.id}/copy-to-global`, { method: 'POST' })
+    message.success(`技能「${skill.name}」已复制到全局源`)
+    await fetchData()
+  } catch (err: unknown) {
+    if (err instanceof ApiError && err.status === 409) {
+      const data = err.data as { existing_skill_id?: string; existing_skill_name?: string } | undefined
+      const existingId = data?.existing_skill_id || ''
+      const existingName = data?.existing_skill_name || skill.name
+      openDiffModal(skill, existingId, existingName)
+    } else {
+      message.error(`复制失败: ${err instanceof Error ? err.message : err}`)
+    }
+  }
+}
+
+async function openDiffModal(skill: Skill, existingId: string, existingName: string) {
+  conflictSourceSkillId.value = skill.id
+  conflictExistingSkillId.value = existingId
+  diffSourceName.value = skill.name
+  diffTargetName.value = existingName || skill.name
+  diffSourceContent.value = ''
+  diffTargetContent.value = ''
+  diffLoading.value = true
+  showDiffModal.value = true
+
+  try {
+    // Load source skill SKILL.md
+    const sourceDetail = await api<SkillDetail>(`/api/skills/${skill.id}`)
+    diffSourceContent.value = sourceDetail.skill_md_content || '(无 SKILL.md)'
+
+    // Load existing global skill SKILL.md
+    if (existingId) {
+      const targetDetail = await api<SkillDetail>(`/api/skills/${existingId}`)
+      diffTargetContent.value = targetDetail.skill_md_content || '(无 SKILL.md)'
+    } else {
+      diffTargetContent.value = '(无法加载)'
+    }
+  } catch {
+    diffTargetContent.value = '(加载失败)'
+  } finally {
+    diffLoading.value = false
+    // Wait for DOM to render, then create editors
+    await nextTick()
+    destroyDiffEditors()
+    diffSourceView = createDiffEditor(diffSourceCmRef.value, diffSourceContent.value)
+    diffTargetView = createDiffEditor(diffTargetCmRef.value, diffTargetContent.value)
+    setupSyncScroll()
+  }
+}
+
+async function handleForceCopy() {
+  if (!conflictSourceSkillId.value) return
+  copyForceLoading.value = true
+  try {
+    await api(`/api/skills/${conflictSourceSkillId.value}/copy-to-global?force=true`, { method: 'POST' })
+    message.success('已覆盖并复制到全局源')
+    destroyDiffEditors()
+    showDiffModal.value = false
+    await fetchData()
+  } catch (err) {
+    message.error(`覆盖复制失败: ${err}`)
+  } finally {
+    copyForceLoading.value = false
+  }
+}
+
 // ---- Lifecycle ----
 
 onMounted(async () => {
@@ -1006,5 +1191,21 @@ onMounted(async () => {
 }
 .broken-symlink-row td .n-tag {
   color: #d03050 !important;
+}
+</style>
+
+<style>
+.diff-cm-container {
+  height: 60vh;
+  overflow: hidden;
+  margin-top: 4px;
+  border: 1px solid var(--n-border-color, #3a3a3a);
+  border-radius: 4px;
+}
+.diff-cm-container .cm-editor {
+  height: 100%;
+}
+.diff-cm-container .cm-scroller {
+  overflow: auto !important;
 }
 </style>

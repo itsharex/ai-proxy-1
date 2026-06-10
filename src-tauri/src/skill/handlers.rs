@@ -1,6 +1,8 @@
 use axum::extract::{Path, Query};
+use axum::http::StatusCode;
 use axum::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::db::get_pool;
 use crate::server::api::{err_json, ok, ApiError, ApiResponse};
@@ -316,4 +318,42 @@ pub async fn cleanup_single_broken(
         .await
         .map_err(|e| err_json(e))?;
     Ok(ok(result))
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConflictResponse {
+    pub existing_skill_id: String,
+    pub existing_skill_name: String,
+}
+
+pub async fn copy_to_global(
+    Path(id): Path<String>,
+    Query(query): Query<CopyToGlobalQuery>,
+) -> Result<Json<ApiResponse<Skill>>, (StatusCode, Json<serde_json::Value>)> {
+    let pool = get_pool().await;
+    let force = query.force.unwrap_or(false);
+
+    match manager::copy_skill_to_global(pool, &id, force).await {
+        Ok(skill) => Ok(ok(skill)),
+        Err((msg, conflict)) => {
+            if let Some(info) = conflict {
+                Err((
+                    StatusCode::CONFLICT,
+                    Json(json!({
+                        "success": false,
+                        "error": msg,
+                        "data": ConflictResponse {
+                            existing_skill_id: info.existing_skill_id,
+                            existing_skill_name: info.existing_skill_name,
+                        }
+                    })),
+                ))
+            } else {
+                Err((
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({ "success": false, "error": msg })),
+                ))
+            }
+        }
+    }
 }
