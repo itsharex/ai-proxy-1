@@ -53,7 +53,15 @@
         <n-form-item label="记录请求体">
           <n-switch v-model:value="settings.recordRequestBody" />
         </n-form-item>
-        <n-form-item label="提取 messages 中的 system">
+        <n-form-item>
+          <template #label>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <span>提取 System 消息</span>
+              </template>
+              将 messages 数组中的 system/developer 角色消息提取到顶层 system 字段，修复 Claude Code 兼容性
+            </n-tooltip>
+          </template>
           <n-switch v-model:value="settings.extractSystemFromMessages" />
         </n-form-item>
         <n-form-item v-if="isTauri" label="开机启动">

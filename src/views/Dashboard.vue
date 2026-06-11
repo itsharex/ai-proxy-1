@@ -43,6 +43,20 @@
       </n-gi>
     </n-grid>
 
+    <n-card>
+      <template #header>
+        <n-space justify="space-between" align="center">
+          <n-text strong>用量趋势</n-text>
+          <n-radio-group v-model:value="timeRange" size="small" @update:value="fetchTrend">
+            <n-radio-button value="today">今日</n-radio-button>
+            <n-radio-button value="week">近7天</n-radio-button>
+            <n-radio-button value="month">近30天</n-radio-button>
+          </n-radio-group>
+        </n-space>
+      </template>
+      <div ref="chartRef" style="height: 300px" />
+    </n-card>
+
     <n-card title="代理状态">
       <n-space align="center" size="large">
         <n-tag :type="serverRunning ? 'success' : 'error'" size="medium" round>
@@ -54,25 +68,14 @@
         </n-text>
       </n-space>
     </n-card>
-
-    <n-card title="最近请求">
-      <n-data-table
-        v-if="recentLogs.length > 0"
-        :columns="logColumns"
-        :data="recentLogs"
-        :bordered="false"
-        size="small"
-      />
-      <n-empty v-else description="暂无请求记录" />
-    </n-card>
   </n-space>
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted, computed } from 'vue'
-import { NTag } from 'naive-ui'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { api, apiState } from '../api'
 import type { Provider } from '../types'
+import * as echarts from 'echarts'
 import {
   ServerOutline,
   GitBranchOutline,
@@ -86,7 +89,9 @@ const providerCount = ref(0)
 const routeCount = ref(0)
 const todayRequests = ref(0)
 const todayTokens = ref(0)
-const recentLogs = ref<Record<string, unknown>[]>([])
+const timeRange = ref<'today' | 'week' | 'month'>('today')
+const chartRef = ref<HTMLElement | null>(null)
+let chart: echarts.ECharts | null = null
 
 interface UsageResponse {
   stats: Array<{
@@ -98,9 +103,81 @@ interface UsageResponse {
   total_requests: number
 }
 
-interface LogsResponse {
-  logs: Array<Record<string, unknown>>
-  total: number
+function formatNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function getDays(range: 'today' | 'week' | 'month'): number {
+  switch (range) {
+    case 'today': return 1
+    case 'week': return 7
+    case 'month': return 30
+  }
+}
+
+function buildChartOptions(data: Array<{ date: string; model: string; total_tokens: number }>) {
+  if (data.length === 0) {
+    return {
+      tooltip: { trigger: 'axis' },
+      legend: {},
+      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+      xAxis: { type: 'category', boundaryGap: false, data: [] },
+      yAxis: { type: 'value', name: 'Tokens' },
+      series: [],
+    }
+  }
+
+  const dateSet = new Set<string>()
+  const modelSet = new Set<string>()
+  data.forEach(item => {
+    dateSet.add(item.date)
+    modelSet.add(item.model)
+  })
+  const dates = Array.from(dateSet).sort()
+  const models = Array.from(modelSet)
+
+  const lookup = new Map<string, number>()
+  data.forEach(item => {
+    lookup.set(`${item.date}|${item.model}`, item.total_tokens)
+  })
+
+  return {
+    tooltip: { trigger: 'axis' },
+    legend: { data: models },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: dates,
+    },
+    yAxis: { type: 'value', name: 'Tokens' },
+    series: models.map(model => ({
+      name: model,
+      type: 'line',
+      smooth: true,
+      areaStyle: { opacity: 0.15 },
+      data: dates.map(date => lookup.get(`${date}|${model}`) ?? 0),
+    })),
+  }
+}
+
+async function fetchTrend() {
+  try {
+    const days = getDays(timeRange.value)
+    const data = await api<Array<{ date: string; model: string; total_tokens: number }>>(`/api/usage/trend?days=${days}`)
+    await nextTick()
+    if (chart) {
+      chart.setOption(buildChartOptions(data), true)
+    }
+  } catch {
+    // silently fail
+  }
+}
+
+function handleResize() {
+  chart?.resize()
 }
 
 onMounted(async () => {
@@ -121,51 +198,16 @@ onMounted(async () => {
     // silently fail
   }
 
-  try {
-    const result = await api<LogsResponse>('/api/logs?page=1&limit=5')
-    recentLogs.value = result.logs
-  } catch {
-    // silently fail
+  await nextTick()
+  if (chartRef.value) {
+    chart = echarts.init(chartRef.value)
   }
+  fetchTrend()
+  window.addEventListener('resize', handleResize)
 })
 
-function formatUtcTime(utcStr: string): string {
-  const date = new Date(utcStr + 'Z')
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).replace(/\//g, '-')
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return String(n)
-}
-
-const logColumns = [
-  {
-    title: '时间',
-    key: 'created_at',
-    width: 180,
-    render: (row: Record<string, unknown>) => formatUtcTime(row.created_at as string),
-  },
-  { title: '模型', key: 'model', width: 160 },
-  { title: '供应商', key: 'provider_name', width: 120 },
-  {
-    title: '状态',
-    key: 'status_code',
-    width: 80,
-    render: (row: Record<string, unknown>) => {
-      const code = row.status_code as number
-      return h(NTag, { size: 'small', type: code < 400 ? 'success' : 'error' }, () => String(code))
-    },
-  },
-  { title: '耗时', key: 'duration_ms', width: 100, render: (row: Record<string, unknown>) => `${((row.duration_ms as number) / 1000).toFixed(1)}s` },
-]
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  chart?.dispose()
+})
 </script>

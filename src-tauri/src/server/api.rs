@@ -356,14 +356,14 @@ async fn get_usage(
         ("SELECT model, provider_name, \
          SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*), SUM(cached_tokens) \
          FROM request_logs \
-         WHERE date(created_at) = date('now') AND status_code = 200 \
+         WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status_code = 200 \
          GROUP BY model, provider_name \
          ORDER BY SUM(total_tokens) DESC", String::new())
     } else {
         ("SELECT model, provider_name, \
          SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens), COUNT(*), SUM(cached_tokens) \
          FROM request_logs \
-         WHERE created_at >= datetime('now', ? || ' days') AND status_code = 200 \
+         WHERE created_at >= datetime('now', 'localtime', ? || ' days') AND status_code = 200 \
          GROUP BY model, provider_name \
          ORDER BY SUM(total_tokens) DESC", format!("-{}", query.days))
     };
@@ -405,13 +405,22 @@ async fn get_usage_trend(
     Query(query): Query<UsageQuery>,
 ) -> Result<Json<ApiResponse<Vec<UsageTrendPoint>>>, Json<ApiError>> {
     let pool = get_pool().await;
-    let rows: Vec<(String, String, i64, i64, i64)> = sqlx::query_as(
-        "SELECT DATE(created_at), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
-         FROM request_logs WHERE created_at >= datetime('now', ? || ' days') AND status_code = 200 \
-         GROUP BY DATE(created_at), model ORDER BY DATE(created_at) ASC, model ASC"
-    )
-    .bind(format!("-{}", query.days))
-    .fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
+    let (sql, param): (&str, String) = if query.days == 1 {
+        ("SELECT strftime('%H:00', created_at, 'localtime'), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
+         FROM request_logs \
+         WHERE date(created_at, 'localtime') = date('now', 'localtime') AND status_code = 200 \
+         GROUP BY strftime('%H:00', created_at, 'localtime'), model \
+         ORDER BY strftime('%H:00', created_at, 'localtime') ASC, model ASC", String::new())
+    } else {
+        ("SELECT DATE(created_at, 'localtime'), model, SUM(prompt_tokens), SUM(completion_tokens), SUM(total_tokens) \
+         FROM request_logs WHERE created_at >= datetime('now', 'localtime', ? || ' days') AND status_code = 200 \
+         GROUP BY DATE(created_at, 'localtime'), model ORDER BY DATE(created_at, 'localtime') ASC, model ASC", format!("-{}", query.days))
+    };
+    let rows: Vec<(String, String, i64, i64, i64)> = if query.days == 1 {
+        sqlx::query_as(sql).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
+    } else {
+        sqlx::query_as(sql).bind(&param).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
+    };
 
     let active_models: HashSet<String> = sqlx::query_scalar("SELECT DISTINCT model_name FROM provider_models")
         .fetch_all(pool).await.unwrap_or_default().into_iter().collect();
