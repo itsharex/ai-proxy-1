@@ -260,6 +260,7 @@ pub fn run() {
                 if cfg!(debug_assertions) {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.set_title("AI Proxy [DEV]");
+                        let _ = window.set_title_bar_style(tauri::TitleBarStyle::Visible);
                     }
                 }
 
