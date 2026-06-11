@@ -14,7 +14,7 @@
         @collapse="collapsed = true"
         @expand="collapsed = false"
       >
-        <div class="sidebar-logo">
+        <div class="sidebar-logo" data-tauri-drag-region>
           <div class="sidebar-logo-icon">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -22,7 +22,7 @@
               <path d="M2 12l10 5 10-5"/>
             </svg>
           </div>
-          <span v-show="!collapsed" class="sidebar-logo-text">AI Proxy</span>
+          <span v-show="!collapsed" class="sidebar-logo-text" data-tauri-drag-region>AI Proxy</span>
         </div>
 
         <div v-if="!collapsed" class="sidebar-section-label">概览</div>
@@ -72,7 +72,7 @@
       </n-layout-sider>
       <n-layout>
         <div class="header-bar" data-tauri-drag-region>
-          <span class="header-title">{{ pageTitle }}</span>
+          <span data-tauri-drag-region>&nbsp;</span>
           <n-space align="center" size="small">
             <n-button quaternary size="tiny" @click="toggleTheme" style="color: var(--text-2)">
               <template #icon>
@@ -126,20 +126,6 @@ const collapsed = ref(false)
 const serverRunning = computed(() => apiState.initialized)
 const proxyPort = computed(() => apiState.proxyPort)
 const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(null)
-
-const pageTitles: Record<string, string> = {
-  '/': '仪表盘',
-  '/providers': '供应商管理',
-  '/apps': '应用管理',
-  '/mcp': 'MCP 管理',
-  '/skills': '技能管理',
-  '/logs': '请求日志',
-  '/runtime-logs': '运行日志',
-  '/rules': '拦截规则',
-  '/settings': '设置',
-}
-
-const pageTitle = computed(() => pageTitles[route.path] || 'AI Proxy')
 
 onMounted(async () => {
   try {
