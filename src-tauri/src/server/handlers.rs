@@ -218,7 +218,7 @@ async fn handle_proxy(
         }
     };
 
-    let body_value: Value = match serde_json::from_slice(&body_bytes) {
+    let mut body_value: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("[ERR] invalid request body: {}", e);
@@ -235,6 +235,80 @@ async fn handle_proxy(
 
     let parser = get_parser(&client_format);
     let generator = get_generator(&client_format);
+
+    // Pre-process: extract system-role messages from messages array into top-level system field
+    // when the setting is enabled. This fixes Claude Code v2.1.153+ which puts role:"system"
+    // inside messages instead of the top-level system parameter.
+    {
+        let pool_ref = crate::db::pool::get_pool().await;
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT key, value FROM settings WHERE key = 'extract_system_from_messages'"
+        ).fetch_all(pool_ref).await.unwrap_or_default();
+        let map: HashMap<String, String> = rows.into_iter().collect();
+        let enabled = map.get("extract_system_from_messages").map(|v| v == "true").unwrap_or(true);
+
+        if enabled {
+            if let Some(msgs) = body_value.get_mut("messages").and_then(|m| m.as_array_mut()) {
+                let mut extra_systems: Vec<String> = Vec::new();
+                let mut i = 0;
+                while i < msgs.len() {
+                    if msgs[i]["role"].as_str() == Some("system") || msgs[i]["role"].as_str() == Some("developer") {
+                        let msg = msgs.remove(i);
+                        let content = &msg["content"];
+                        let text = if let Some(s) = content.as_str() {
+                            s.to_string()
+                        } else if let Some(arr) = content.as_array() {
+                            arr.iter()
+                                .filter_map(|p| {
+                                    if p["type"].as_str() == Some("text") {
+                                        p["text"].as_str().map(String::from)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        } else {
+                            String::new()
+                        };
+                        if !text.is_empty() {
+                            extra_systems.push(text);
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                if !extra_systems.is_empty() {
+                    let existing = if let Some(sys) = body_value.get("system") {
+                        if let Some(s) = sys.as_str() {
+                            s.to_string()
+                        } else if let Some(arr) = sys.as_array() {
+                            arr.iter()
+                                .filter_map(|p| {
+                                    if p["type"].as_str() == Some("text") {
+                                        p["text"].as_str().map(String::from)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    let combined = if existing.is_empty() {
+                        extra_systems.join("\n\n")
+                    } else {
+                        format!("{}\n\n{}", existing, extra_systems.join("\n\n"))
+                    };
+                    body_value["system"] = serde_json::Value::String(combined);
+                }
+            }
+        }
+    }
 
     {
         let model_hint = body_value["model"].as_str().unwrap_or("unknown");

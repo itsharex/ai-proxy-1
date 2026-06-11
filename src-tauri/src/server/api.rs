@@ -548,12 +548,13 @@ struct Settings {
     request_timeout: String,
     connect_timeout: String,
     codex_preserve_auth: String,
+    extract_system_from_messages: String,
 }
 
 async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
     let pool = get_pool().await;
     let rows: Vec<(String, String)> = sqlx::query_as(
-        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout', 'codex_preserve_auth', 'upstream_max_retries', 'upstream_retry_backoff_base_ms')"
+        "SELECT key, value FROM settings WHERE key IN ('http_port', 'log_retention_days', 'record_request_body', 'proxy_auth_enabled', 'proxy_auth_key', 'request_timeout', 'connect_timeout', 'codex_preserve_auth', 'upstream_max_retries', 'upstream_retry_backoff_base_ms', 'extract_system_from_messages')"
     ).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?;
 
     let map: HashMap<String, String> = rows.into_iter().collect();
@@ -568,6 +569,7 @@ async fn get_settings() -> Result<Json<ApiResponse<Settings>>, Json<ApiError>> {
         codex_preserve_auth: map.get("codex_preserve_auth").cloned().unwrap_or_else(|| "false".into()),
         upstream_max_retries: map.get("upstream_max_retries").cloned().unwrap_or_else(|| "10".into()),
         upstream_retry_backoff_base_ms: map.get("upstream_retry_backoff_base_ms").cloned().unwrap_or_else(|| "500".into()),
+        extract_system_from_messages: map.get("extract_system_from_messages").cloned().unwrap_or_else(|| "true".into()),
     }))
 }
 
@@ -583,6 +585,7 @@ struct UpdateSettingsBody {
     request_timeout: Option<String>,
     connect_timeout: Option<String>,
     codex_preserve_auth: Option<String>,
+    extract_system_from_messages: Option<String>,
 }
 
 async fn update_settings(
@@ -600,6 +603,7 @@ async fn update_settings(
         ("codex_preserve_auth", body.codex_preserve_auth),
         ("upstream_max_retries", body.upstream_max_retries),
         ("upstream_retry_backoff_base_ms", body.upstream_retry_backoff_base_ms),
+        ("extract_system_from_messages", body.extract_system_from_messages),
     ];
     for (key, value) in updates {
         if let Some(v) = value {

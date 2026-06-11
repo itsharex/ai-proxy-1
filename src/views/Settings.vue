@@ -53,6 +53,9 @@
         <n-form-item label="记录请求体">
           <n-switch v-model:value="settings.recordRequestBody" />
         </n-form-item>
+        <n-form-item label="提取 messages 中的 system">
+          <n-switch v-model:value="settings.extractSystemFromMessages" />
+        </n-form-item>
         <n-form-item v-if="isTauri" label="开机启动">
           <n-switch v-model:value="autostartEnabled" @update:value="handleAutostartChange" />
         </n-form-item>
@@ -130,6 +133,7 @@ interface AppSettings {
   proxyAuthKey: string
   upstreamMaxRetries: number
   upstreamRetryBackoffBaseMs: number
+  extractSystemFromMessages: boolean
 }
 
 const settings = ref<AppSettings>({
@@ -141,6 +145,7 @@ const settings = ref<AppSettings>({
   proxyAuthKey: '',
   upstreamMaxRetries: 10,
   upstreamRetryBackoffBaseMs: 500,
+  extractSystemFromMessages: true,
 })
 
 const savedNetworkConfig = ref({
@@ -172,6 +177,7 @@ async function loadSettings() {
       proxyAuthKey: data.proxy_auth_key,
       upstreamMaxRetries: parseInt((data as any).upstream_max_retries) || 10,
       upstreamRetryBackoffBaseMs: parseInt((data as any).upstream_retry_backoff_base_ms) || 500,
+      extractSystemFromMessages: (data as any).extract_system_from_messages !== 'false',
     }
     savedNetworkConfig.value = {
       port: settings.value.port,
@@ -201,6 +207,7 @@ async function handleSave() {
         proxy_auth_key: settings.value.proxyAuthKey,
         upstream_max_retries: String(settings.value.upstreamMaxRetries),
         upstream_retry_backoff_base_ms: String(settings.value.upstreamRetryBackoffBaseMs),
+        extract_system_from_messages: String(settings.value.extractSystemFromMessages),
       }),
     })
 

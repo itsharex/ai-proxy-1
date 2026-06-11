@@ -478,10 +478,40 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
     let role = match role_str {
         "user" => IrRole::User,
         "assistant" => IrRole::Assistant,
+        "system" => IrRole::System,
+        "developer" => IrRole::Developer,
         other => {
             return Err(ProxyError::Parse(format!("unknown role: {}", other)));
         }
     };
+
+    // System/Developer messages: extract text content
+    if role == IrRole::System || role == IrRole::Developer {
+        let mut content_parts = Vec::new();
+        if let Some(content) = msg.get("content") {
+            if let Some(text) = content.as_str() {
+                if !text.is_empty() {
+                    content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                }
+            } else if let Some(arr) = content.as_array() {
+                for part in arr {
+                    let part_type = part["type"].as_str().unwrap_or("text");
+                    if part_type == "text" {
+                        if let Some(text) = part["text"].as_str() {
+                            content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                        }
+                    }
+                }
+            }
+        }
+        return Ok(vec![IrMessage {
+            role,
+            content: content_parts,
+            name: None,
+            tool_call_id: None,
+            tool_calls: None,
+        }]);
+    }
 
     // Assistant messages: parse tool_use and content, return single message
     if role == IrRole::Assistant {
