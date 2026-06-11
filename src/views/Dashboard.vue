@@ -4,22 +4,22 @@
       <div class="stat-tile">
         <div class="stat-tile-top" style="background: var(--accent);" />
         <div class="stat-tile-value tabular-nums">{{ providerCount }}</div>
-        <div class="stat-tile-label">供应商数量</div>
+        <div class="stat-tile-label" title="已配置的供应商总数">供应商数量</div>
       </div>
       <div class="stat-tile">
         <div class="stat-tile-top" style="background: var(--info);" />
         <div class="stat-tile-value tabular-nums">{{ routeCount }}</div>
-        <div class="stat-tile-label">模型数量</div>
+        <div class="stat-tile-label" title="已配置的模型总数">模型数量</div>
       </div>
       <div class="stat-tile">
         <div class="stat-tile-top" style="background: var(--success);" />
         <div class="stat-tile-value tabular-nums">{{ formatNumber(todayRequests) }}</div>
-        <div class="stat-tile-label">今日请求数</div>
+        <div class="stat-tile-label" title="今日累计代理请求数">今日请求数</div>
       </div>
       <div class="stat-tile">
         <div class="stat-tile-top" style="background: var(--warning);" />
         <div class="stat-tile-value tabular-nums">{{ formatNumber(todayTokens) }}</div>
-        <div class="stat-tile-label">今日 Token 用量</div>
+        <div class="stat-tile-label" title="今日累计 Token 消耗量">今日 Token 用量</div>
       </div>
     </div>
 
