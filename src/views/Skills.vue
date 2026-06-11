@@ -186,15 +186,11 @@
       :mask-closable="false"
     >
       <template #header-extra>
-        <n-space align="center" size="small">
-          <n-button quaternary size="small" @click="editMdFullscreen = !editMdFullscreen">
-            <template #icon>
-              <n-icon><contract-outline v-if="editMdFullscreen" /><expand-outline v-else /></n-icon>
-            </template>
-          </n-button>
-          <n-button @click="showEditMdModal = false">取消</n-button>
-          <n-button type="primary" :loading="editMdLoading" @click="handleSaveMd">保存</n-button>
-        </n-space>
+        <n-button quaternary size="small" @click="editMdFullscreen = !editMdFullscreen">
+          <template #icon>
+            <n-icon><contract-outline v-if="editMdFullscreen" /><expand-outline v-else /></n-icon>
+          </template>
+        </n-button>
       </template>
       <n-spin :show="editMdLoading">
         <div :style="{ position: 'relative', height: editMdFullscreen ? 'calc(90vh - 180px)' : '480px' }">
@@ -205,6 +201,12 @@
           />
         </div>
       </n-spin>
+      <template #footer>
+        <n-space justify="end">
+          <n-button @click="showEditMdModal = false">取消</n-button>
+          <n-button type="primary" :loading="editMdLoading" @click="handleSaveMd">保存</n-button>
+        </n-space>
+      </template>
     </n-modal>
 
     <!-- Marketplace Search Modal -->
