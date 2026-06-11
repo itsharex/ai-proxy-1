@@ -70,7 +70,7 @@
         />
 
       </n-layout-sider>
-      <n-layout>
+      <n-layout class="main-layout">
         <div class="header-bar" data-tauri-drag-region>
           <span data-tauri-drag-region>&nbsp;</span>
           <n-space align="center" size="small">

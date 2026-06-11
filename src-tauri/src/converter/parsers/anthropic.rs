@@ -262,7 +262,7 @@ impl FormatParser for AnthropicParser {
                     IrUsage {
                         prompt_tokens: input as u32,
                         completion_tokens: output as u32,
-                        total_tokens: (input + output + cached) as u32,
+                        total_tokens: (input + output + cached + cache_creation) as u32,
                         cached_tokens: cached as u32,
                         cache_creation_input_tokens: cache_creation as u32,
                         thinking_tokens: thinking as u32,
@@ -296,7 +296,7 @@ impl FormatParser for AnthropicParser {
                     IrUsage {
                         prompt_tokens: input as u32,
                         completion_tokens: 0,
-                        total_tokens: (input + cached) as u32,
+                        total_tokens: (input + cached + cache_creation) as u32,
                         cached_tokens: cached as u32,
                         cache_creation_input_tokens: cache_creation as u32,
                         thinking_tokens: 0,
@@ -442,7 +442,7 @@ impl FormatParser for AnthropicParser {
                 IrUsage {
                     prompt_tokens: input as u32,
                     completion_tokens: output as u32,
-                    total_tokens: (input + output + cached) as u32,
+                    total_tokens: (input + output + cached + cache_creation) as u32,
                     cached_tokens: cached as u32,
                     cache_creation_input_tokens: cache_creation as u32,
                     thinking_tokens: thinking as u32,

@@ -74,3 +74,10 @@
 /* ===== Utilities ===== */
 .tabular-nums { font-variant-numeric: tabular-nums; }
 .font-mono { font-family: var(--font-mono); }
+
+/* Prevent rubber-band overscroll on macOS */
+html, body {
+  overscroll-behavior: none;
+  overflow: hidden;
+  height: 100%;
+}
