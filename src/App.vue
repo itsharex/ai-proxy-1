@@ -1,34 +1,91 @@
 <template>
-  <n-config-provider :locale="zhCN" :date-locale="dateZhCN">
+  <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme="naiveTheme" :theme-overrides="themeOverrides">
     <n-dialog-provider>
     <n-message-provider>
     <n-layout style="height: 100vh" has-sider>
       <n-layout-sider
-        bordered
         collapse-mode="width"
         :collapsed-width="64"
-        :width="200"
+        :width="220"
         :collapsed="collapsed"
         show-trigger
+        :native-scrollbar="false"
+        :style="{ background: 'var(--sidebar-bg)' }"
         @collapse="collapsed = true"
         @expand="collapsed = false"
       >
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span v-show="!collapsed" class="sidebar-logo-text">AI Proxy</span>
+        </div>
+
+        <div v-if="!collapsed" class="sidebar-section-label">概览</div>
         <n-menu
           :collapsed="collapsed"
           :collapsed-width="64"
-          :collapsed-icon-size="22"
-          :options="menuOptions"
+          :collapsed-icon-size="20"
+          :options="overviewMenu"
           :value="currentPath"
+          :indent="20"
           @update:value="handleMenuSelect"
         />
+
+        <div v-if="!collapsed" class="sidebar-section-label">管理</div>
+        <n-menu
+          :collapsed="collapsed"
+          :collapsed-width="64"
+          :collapsed-icon-size="20"
+          :options="manageMenu"
+          :value="currentPath"
+          :indent="20"
+          @update:value="handleMenuSelect"
+        />
+
+        <div v-if="!collapsed" class="sidebar-section-label">日志</div>
+        <n-menu
+          :collapsed="collapsed"
+          :collapsed-width="64"
+          :collapsed-icon-size="20"
+          :options="logsMenu"
+          :value="currentPath"
+          :indent="20"
+          @update:value="handleMenuSelect"
+        />
+
+        <div v-if="!collapsed" class="sidebar-section-label">系统</div>
+        <n-menu
+          :collapsed="collapsed"
+          :collapsed-width="64"
+          :collapsed-icon-size="20"
+          :options="systemMenu"
+          :value="currentPath"
+          :indent="20"
+          @update:value="handleMenuSelect"
+        />
+
       </n-layout-sider>
       <n-layout>
-        <n-layout-header bordered style="padding: 12px 24px; display: flex; align-items: center; justify-content: flex-end;">
-          <n-tag :type="serverRunning ? 'success' : 'error'" size="small">
-            {{ serverRunning ? `Proxy :${proxyPort}` : 'Proxy stopped' }}
-          </n-tag>
-        </n-layout-header>
-        <n-layout-content content-style="padding: 24px;">
+        <div class="header-bar">
+          <span class="header-title">{{ pageTitle }}</span>
+          <n-space align="center" size="small">
+            <n-button quaternary size="tiny" @click="toggleTheme" style="color: var(--text-2)">
+              <template #icon>
+                <n-icon size="16"><component :is="isDark ? SunnyOutline : MoonOutline" /></n-icon>
+              </template>
+            </n-button>
+            <n-space align="center" size="small" :style="{ color: serverRunning ? 'var(--success)' : 'var(--error)', fontSize: '12px', fontFamily: 'var(--font-mono)' }">
+              <span class="status-dot" :class="serverRunning ? 'running' : 'stopped'" />
+              <span>{{ serverRunning ? `127.0.0.1:${proxyPort}` : '已停止' }}</span>
+            </n-space>
+          </n-space>
+        </div>
+        <n-layout-content content-style="padding: 20px 24px;">
           <router-view />
         </n-layout-content>
       </n-layout>
@@ -46,6 +103,7 @@ import { NIcon, zhCN, dateZhCN } from 'naive-ui'
 import { listen } from '@tauri-apps/api/event'
 import { isTauri } from './utils/env'
 import { apiState, initApi } from './api'
+import { useTheme } from './theme/use-theme'
 import UpdateNotification from './components/UpdateNotification.vue'
 import {
   HomeOutline,
@@ -55,7 +113,11 @@ import {
   AppsOutline,
   SettingsOutline,
   BookOutline,
+  SunnyOutline,
+  MoonOutline,
 } from '@vicons/ionicons5'
+
+const { isDark, naiveTheme, themeOverrides, toggleTheme } = useTheme()
 
 const router = useRouter()
 const route = useRoute()
@@ -63,6 +125,20 @@ const collapsed = ref(false)
 const serverRunning = computed(() => apiState.initialized)
 const proxyPort = computed(() => apiState.proxyPort)
 const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(null)
+
+const pageTitles: Record<string, string> = {
+  '/': '仪表盘',
+  '/providers': '供应商管理',
+  '/apps': '应用管理',
+  '/mcp': 'MCP 管理',
+  '/skills': '技能管理',
+  '/logs': '请求日志',
+  '/runtime-logs': '运行日志',
+  '/rules': '拦截规则',
+  '/settings': '设置',
+}
+
+const pageTitle = computed(() => pageTitles[route.path] || 'AI Proxy')
 
 onMounted(async () => {
   try {
@@ -82,15 +158,24 @@ function renderIcon(icon: typeof HomeOutline) {
   return () => h(NIcon, null, () => h(icon))
 }
 
-const menuOptions = [
+const overviewMenu = [
   { label: '仪表盘', key: '/', icon: renderIcon(HomeOutline) },
+]
+
+const manageMenu = [
   { label: '供应商', key: '/providers', icon: renderIcon(ServerOutline) },
   { label: '应用管理', key: '/apps', icon: renderIcon(AppsOutline) },
   { label: 'MCP 管理', key: '/mcp', icon: renderIcon(ServerOutline) },
   { label: '技能管理', key: '/skills', icon: renderIcon(BookOutline) },
+  { label: '拦截规则', key: '/rules', icon: renderIcon(SettingsOutline) },
+]
+
+const logsMenu = [
   { label: '请求日志', key: '/logs', icon: renderIcon(DocumentTextOutline) },
   { label: '运行日志', key: '/runtime-logs', icon: renderIcon(TerminalOutline) },
-  { label: '拦截规则', key: '/rules', icon: renderIcon(SettingsOutline) },
+]
+
+const systemMenu = [
   { label: '设置', key: '/settings', icon: renderIcon(SettingsOutline) },
 ]
 

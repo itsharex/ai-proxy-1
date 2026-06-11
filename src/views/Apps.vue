@@ -12,6 +12,8 @@
             :key="app.app_type"
             size="small"
             hoverable
+            class="app-card"
+            :data-type="app.app_type"
           >
             <template #header>
               <n-space justify="space-between" align="center">

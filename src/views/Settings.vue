@@ -1,6 +1,35 @@
 <template>
   <n-space vertical size="large">
-    <n-card title="全局设置">
+    <n-card title="通用设置">
+      <n-form label-placement="left" label-width="140" style="max-width: 520px">
+        <n-form-item label="外观主题">
+          <n-radio-group v-model:value="themeMode" @update:value="handleThemeChange" size="small">
+            <n-radio-button value="light">浅色</n-radio-button>
+            <n-radio-button value="dark">深色</n-radio-button>
+            <n-radio-button value="system">跟随系统</n-radio-button>
+          </n-radio-group>
+        </n-form-item>
+        <n-form-item v-if="isTauri" label="开机启动">
+          <n-switch v-model:value="autostartEnabled" @update:value="handleAutostartChange" />
+        </n-form-item>
+        <n-form-item>
+          <template #label>
+            <n-tooltip trigger="hover">
+              <template #trigger>
+                <span>提取 System 消息</span>
+              </template>
+              将 messages 数组中的 system/developer 角色消息提取到顶层 system 字段，修复 Claude Code 兼容性
+            </n-tooltip>
+          </template>
+          <n-switch v-model:value="settings.extractSystemFromMessages" />
+        </n-form-item>
+        <n-form-item label="记录请求体">
+          <n-switch v-model:value="settings.recordRequestBody" />
+        </n-form-item>
+      </n-form>
+    </n-card>
+
+    <n-card title="网络设置">
       <n-form label-placement="left" label-width="140" style="max-width: 520px">
         <n-form-item label="HTTP 端口">
           <n-input-number
@@ -50,26 +79,6 @@
             style="width: 100%"
           />
         </n-form-item>
-        <n-form-item label="记录请求体">
-          <n-switch v-model:value="settings.recordRequestBody" />
-        </n-form-item>
-        <n-form-item>
-          <template #label>
-            <n-tooltip trigger="hover">
-              <template #trigger>
-                <span>提取 System 消息</span>
-              </template>
-              将 messages 数组中的 system/developer 角色消息提取到顶层 system 字段，修复 Claude Code 兼容性
-            </n-tooltip>
-          </template>
-          <n-switch v-model:value="settings.extractSystemFromMessages" />
-        </n-form-item>
-        <n-form-item v-if="isTauri" label="开机启动">
-          <n-switch v-model:value="autostartEnabled" @update:value="handleAutostartChange" />
-        </n-form-item>
-
-        <n-divider />
-
         <n-form-item label="代理 API Key">
           <n-input
             v-model:value="settings.proxyAuthKey"
@@ -78,16 +87,14 @@
             placeholder="设置 Agent 访问代理时使用的 API Key"
           />
         </n-form-item>
-
         <n-form-item>
-          <n-space>
-            <n-button type="primary" @click="handleSave">
-              保存设置
-            </n-button>
-          </n-space>
+          <n-button type="primary" @click="handleSave">
+            保存设置
+          </n-button>
         </n-form-item>
       </n-form>
     </n-card>
+
     <n-card v-if="isTauri" title="检查更新">
       <n-form label-placement="left" label-width="140" style="max-width: 520px">
         <n-form-item label="当前版本">
@@ -105,9 +112,12 @@
       </n-form>
     </n-card>
 
-    <n-card v-if="isTauri" title="危险操作" style="margin-top: 16px">
-      <template #header-extra>
-        <n-tag type="error" size="small">谨慎操作</n-tag>
+    <n-card v-if="isTauri" class="danger-zone">
+      <template #header>
+        <n-space align="center">
+          <n-text strong style="color: var(--error)">危险操作</n-text>
+          <n-tag type="error" size="small">谨慎操作</n-tag>
+        </n-space>
       </template>
       <n-space vertical>
         <n-text>清除所有数据将删除所有供应商配置、API Key、请求日志等，应用将自动重启。</n-text>
@@ -128,9 +138,13 @@ import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
 import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from '../utils/env'
 import { api, refreshApiConfig } from '../api'
+import { useTheme } from '../theme/use-theme'
+import type { ThemeMode } from '../theme/use-theme'
 import UpdateNotification from '../components/UpdateNotification.vue'
 
+const { mode: currentThemeMode, setMode } = useTheme()
 const message = useMessage()
+const themeMode = ref<ThemeMode>(currentThemeMode.value)
 
 interface AppSettings {
   port: number
@@ -164,6 +178,10 @@ const autostartEnabled = ref(false)
 const currentVersion = ref('...')
 const checkingUpdate = ref(false)
 const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(null)
+
+function handleThemeChange(val: ThemeMode) {
+  setMode(val)
+}
 
 async function loadSettings() {
   try {

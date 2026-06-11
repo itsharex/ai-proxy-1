@@ -1,0 +1,76 @@
+/* ===== AI Proxy Design Tokens ===== */
+/* Light mode (default) */
+:root {
+  --bg-base: #F8F9FB;
+  --bg-elevated: #FFFFFF;
+  --bg-sunken: #F1F3F5;
+  --bg-overlay: #FFFFFF;
+  --border: #E2E6EB;
+  --border-subtle: #ECF0F4;
+  --text-1: #141720;
+  --text-2: #5C6370;
+  --text-3: #9BA3B1;
+  --accent: #0891B2;
+  --accent-hover: #0E7490;
+  --accent-subtle: #E0F7FA;
+  --accent-pressed: #155E75;
+  --success: #16A34A;
+  --success-subtle: #DCFCE7;
+  --warning: #D97706;
+  --warning-subtle: #FEF3C7;
+  --error: #DC2626;
+  --error-subtle: #FEE2E2;
+  --info: #6366F1;
+  --info-subtle: #E0E7FF;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-border: #F1F3F5;
+  --header-bg: #FFFFFF;
+  --header-border: #ECF0F4;
+  --stat-card-hover-shadow: 0 4px 16px rgba(0,0,0,0.06);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --font-sans: 'DM Sans', -apple-system, 'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Menlo', monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  color-scheme: light;
+}
+
+/* Dark mode */
+[data-theme="dark"] {
+  --bg-base: #0D1017;
+  --bg-elevated: #161A24;
+  --bg-sunken: #111520;
+  --bg-overlay: #1C2130;
+  --border: #252B38;
+  --border-subtle: #1E2330;
+  --text-1: #E4E8F0;
+  --text-2: #8892A2;
+  --text-3: #555E6E;
+  --accent: #22D3EE;
+  --accent-hover: #06B6D4;
+  --accent-subtle: #0C2D3A;
+  --accent-pressed: #67E8F9;
+  --success: #22C55E;
+  --success-subtle: #052E16;
+  --warning: #F59E0B;
+  --warning-subtle: #451A03;
+  --error: #EF4444;
+  --error-subtle: #450A0A;
+  --info: #818CF8;
+  --info-subtle: #1E1B4B;
+  --sidebar-bg: #131720;
+  --sidebar-border: #1E2330;
+  --header-bg: #131720;
+  --header-border: #1E2330;
+  --stat-card-hover-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  color-scheme: dark;
+}
+
+/* ===== Utilities ===== */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+.font-mono { font-family: var(--font-mono); }

@@ -43,7 +43,11 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { api } from '../api'
 import * as echarts from 'echarts'
+import { getEchartsTheme } from '../theme'
+import { useTheme } from '../theme/use-theme'
 import type { UsageTrendPoint } from '../types'
+
+const { isDark } = useTheme()
 
 interface UsageStat {
   model: string
@@ -126,13 +130,16 @@ function getDaysFromRange(range: 'today' | 'week' | 'month'): number {
 }
 
 function buildLineChartOptions(data: UsageTrendPoint[]) {
+  const theme = getEchartsTheme(isDark.value)
+
   if (data.length === 0) {
     return {
+      backgroundColor: 'transparent',
       tooltip: { trigger: 'axis' },
-      legend: {},
+      legend: { textStyle: { color: theme.text } },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', boundaryGap: false, data: [] },
-      yAxis: { type: 'value', name: 'Tokens' },
+      xAxis: { type: 'category', boundaryGap: false, data: [], axisLine: { lineStyle: { color: theme.border } }, axisLabel: { color: theme.text } },
+      yAxis: { type: 'value', name: 'Tokens', axisLine: { lineStyle: { color: theme.border } }, splitLine: { lineStyle: { color: theme.border } }, axisLabel: { color: theme.text }, nameTextStyle: { color: theme.text } },
       series: [],
     }
   }
@@ -152,42 +159,58 @@ function buildLineChartOptions(data: UsageTrendPoint[]) {
   })
 
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: models },
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', backgroundColor: theme.bg, borderColor: theme.border, textStyle: { color: theme.text } },
+    legend: { data: models, textStyle: { color: theme.text } },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
       data: dates,
+      axisLine: { lineStyle: { color: theme.border } },
+      axisLabel: { color: theme.text, fontSize: 11 },
     },
-    yAxis: { type: 'value', name: 'Tokens' },
-    series: models.map(model => ({
+    yAxis: {
+      type: 'value',
+      name: 'Tokens',
+      axisLine: { lineStyle: { color: theme.border } },
+      splitLine: { lineStyle: { color: theme.border } },
+      axisLabel: { color: theme.text, fontSize: 11 },
+      nameTextStyle: { color: theme.text },
+    },
+    series: models.map((model, i) => ({
       name: model,
       type: 'line',
       smooth: true,
+      symbol: 'none',
+      lineStyle: { width: 2, color: theme.palette[i % theme.palette.length] },
+      areaStyle: { opacity: 0.08, color: theme.palette[i % theme.palette.length] },
       data: dates.map(date => lookup.get(`${date}|${model}`) ?? 0),
     })),
   }
 }
 
 function buildPieChartOptions(data: UsageStat[]) {
+  const theme = getEchartsTheme(isDark.value)
   const costData = data.map((item) => ({
     name: item.model,
     value: Number(item.cost_estimate.toFixed(4)),
   }))
 
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: ${c} ({d}%)' },
-    legend: { orient: 'vertical', left: 'left' },
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'item', formatter: '{b}: ${c} ({d}%)', backgroundColor: theme.bg, borderColor: theme.border, textStyle: { color: theme.text } },
+    legend: { orient: 'vertical', left: 'left', textStyle: { color: theme.text } },
+    color: theme.palette,
     series: [
       {
         type: 'pie',
         radius: ['40%', '70%'],
         avoidLabelOverlap: false,
-        itemStyle: { borderRadius: 10, borderColor: '#fff', borderWidth: 2 },
+        itemStyle: { borderRadius: 10, borderColor: theme.bg, borderWidth: 2 },
         label: { show: false, position: 'center' },
         emphasis: {
-          label: { show: true, fontSize: 16, fontWeight: 'bold' },
+          label: { show: true, fontSize: 16, fontWeight: 'bold', color: theme.text },
         },
         labelLine: { show: false },
         data: costData,

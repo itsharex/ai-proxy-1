@@ -1,47 +1,27 @@
 <template>
   <n-space vertical size="large">
-    <n-grid :cols="4" :x-gap="16" :y-gap="16" responsive="screen" item-responsive>
-      <n-gi span="4 m:1">
-        <n-card>
-          <n-statistic label="供应商数量">
-            <template #prefix>
-              <n-icon :component="ServerOutline" />
-            </template>
-            {{ providerCount }}
-          </n-statistic>
-        </n-card>
-      </n-gi>
-      <n-gi span="4 m:1">
-        <n-card>
-          <n-statistic label="模型数量">
-            <template #prefix>
-              <n-icon :component="GitBranchOutline" />
-            </template>
-            {{ routeCount }}
-          </n-statistic>
-        </n-card>
-      </n-gi>
-      <n-gi span="4 m:1">
-        <n-card>
-          <n-statistic label="今日请求数">
-            <template #prefix>
-              <n-icon :component="DocumentTextOutline" />
-            </template>
-            {{ formatNumber(todayRequests) }}
-          </n-statistic>
-        </n-card>
-      </n-gi>
-      <n-gi span="4 m:1">
-        <n-card>
-          <n-statistic label="今日 Token 用量">
-            <template #prefix>
-              <n-icon :component="PulseOutline" />
-            </template>
-            {{ formatNumber(todayTokens) }}
-          </n-statistic>
-        </n-card>
-      </n-gi>
-    </n-grid>
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;">
+      <div class="stat-tile">
+        <div class="stat-tile-top" style="background: var(--accent);" />
+        <div class="stat-tile-value tabular-nums">{{ providerCount }}</div>
+        <div class="stat-tile-label">供应商数量</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-top" style="background: var(--info);" />
+        <div class="stat-tile-value tabular-nums">{{ routeCount }}</div>
+        <div class="stat-tile-label">模型数量</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-top" style="background: var(--success);" />
+        <div class="stat-tile-value tabular-nums">{{ formatNumber(todayRequests) }}</div>
+        <div class="stat-tile-label">今日请求数</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-top" style="background: var(--warning);" />
+        <div class="stat-tile-value tabular-nums">{{ formatNumber(todayTokens) }}</div>
+        <div class="stat-tile-label">今日 Token 用量</div>
+      </div>
+    </div>
 
     <n-card>
       <template #header>
@@ -57,14 +37,17 @@
       <div ref="chartRef" style="height: 300px" />
     </n-card>
 
-    <n-card title="代理状态">
+    <n-card>
+      <template #header>
+        <n-text strong>代理状态</n-text>
+      </template>
       <n-space align="center" size="large">
-        <n-tag :type="serverRunning ? 'success' : 'error'" size="medium" round>
-          {{ serverRunning ? '运行中' : '已停止' }}
-        </n-tag>
-        <n-text v-if="serverRunning">
-          代理服务器运行在
-          <n-text code>127.0.0.1:{{ proxyPort }}</n-text>
+        <n-space align="center" size="small" :style="{ color: serverRunning ? 'var(--success)' : 'var(--error)' }">
+          <span class="status-dot" :class="serverRunning ? 'running' : 'stopped'" />
+          <span style="font-weight: 600">{{ serverRunning ? '运行中' : '已停止' }}</span>
+        </n-space>
+        <n-text v-if="serverRunning" style="color: var(--text-2); font-family: var(--font-mono); font-size: 13px;">
+          127.0.0.1:{{ proxyPort }}
         </n-text>
       </n-space>
     </n-card>
@@ -76,13 +59,10 @@ import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { api, apiState } from '../api'
 import type { Provider } from '../types'
 import * as echarts from 'echarts'
-import {
-  ServerOutline,
-  GitBranchOutline,
-  DocumentTextOutline,
-  PulseOutline,
-} from '@vicons/ionicons5'
+import { getEchartsTheme } from '../theme'
+import { useTheme } from '../theme/use-theme'
 
+const { isDark } = useTheme()
 const serverRunning = computed(() => apiState.initialized)
 const proxyPort = computed(() => apiState.proxyPort)
 const providerCount = ref(0)
@@ -118,13 +98,16 @@ function getDays(range: 'today' | 'week' | 'month'): number {
 }
 
 function buildChartOptions(data: Array<{ date: string; model: string; total_tokens: number }>) {
+  const theme = getEchartsTheme(isDark.value)
+
   if (data.length === 0) {
     return {
+      backgroundColor: 'transparent',
       tooltip: { trigger: 'axis' },
-      legend: {},
+      legend: { textStyle: { color: theme.text } },
       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: { type: 'category', boundaryGap: false, data: [] },
-      yAxis: { type: 'value', name: 'Tokens' },
+      xAxis: { type: 'category', boundaryGap: false, data: [], axisLine: { lineStyle: { color: theme.border } }, axisLabel: { color: theme.text } },
+      yAxis: { type: 'value', name: 'Tokens', axisLine: { lineStyle: { color: theme.border } }, splitLine: { lineStyle: { color: theme.border } }, axisLabel: { color: theme.text }, nameTextStyle: { color: theme.text } },
       series: [],
     }
   }
@@ -144,20 +127,32 @@ function buildChartOptions(data: Array<{ date: string; model: string; total_toke
   })
 
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { data: models },
+    backgroundColor: 'transparent',
+    tooltip: { trigger: 'axis', backgroundColor: theme.bg, borderColor: theme.border, textStyle: { color: theme.text } },
+    legend: { data: models, textStyle: { color: theme.text } },
     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
     xAxis: {
       type: 'category',
       boundaryGap: false,
       data: dates,
+      axisLine: { lineStyle: { color: theme.border } },
+      axisLabel: { color: theme.text, fontSize: 11 },
     },
-    yAxis: { type: 'value', name: 'Tokens' },
-    series: models.map(model => ({
+    yAxis: {
+      type: 'value',
+      name: 'Tokens',
+      axisLine: { lineStyle: { color: theme.border } },
+      splitLine: { lineStyle: { color: theme.border } },
+      axisLabel: { color: theme.text, fontSize: 11 },
+      nameTextStyle: { color: theme.text },
+    },
+    series: models.map((model, i) => ({
       name: model,
       type: 'line',
       smooth: true,
-      areaStyle: { opacity: 0.15 },
+      symbol: 'none',
+      lineStyle: { width: 2, color: theme.palette[i % theme.palette.length] },
+      areaStyle: { opacity: 0.08, color: theme.palette[i % theme.palette.length] },
       data: dates.map(date => lookup.get(`${date}|${model}`) ?? 0),
     })),
   }

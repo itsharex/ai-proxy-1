@@ -96,11 +96,10 @@ function formatTimestamp(ts: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-function messageStyle(level: string) {
-  return {
-    color: level === 'ERROR' ? '#f44' : level === 'WARN' ? '#ffa500' : '#d4d4d4',
-    wordBreak: 'break-word' as const,
-  }
+function messageColor(level: string): string {
+  if (level === 'ERROR') return 'var(--error)'
+  if (level === 'WARN') return 'var(--warning)'
+  return 'var(--text-2)'
 }
 
 onMounted(async () => {
@@ -123,58 +122,60 @@ onUnmounted(() => {
 
 <template>
   <div style="display: flex; flex-direction: column; height: calc(100vh - 100px);">
-    <n-space align="center" justify="space-between" style="margin-bottom: 12px;">
-      <n-space align="center">
-        <n-button-group size="small">
-          <n-button
-            v-for="lvl in levels"
-            :key="lvl"
-            :type="levelFilter === lvl ? 'primary' : 'default'"
-            @click="levelFilter = lvl"
-          >
-            {{ lvl }}
+    <div class="terminal-toolbar">
+      <n-space align="center" justify="space-between">
+        <n-space align="center">
+          <n-button-group size="small">
+            <n-button
+              v-for="lvl in levels"
+              :key="lvl"
+              :type="levelFilter === lvl ? 'primary' : 'default'"
+              @click="levelFilter = lvl"
+            >
+              {{ lvl }}
+            </n-button>
+          </n-button-group>
+          <n-button size="small" @click="paused = !paused">
+            <template #icon>
+              <n-icon><component :is="paused ? PlayOutline : PauseOutline" /></n-icon>
+            </template>
+            {{ paused ? '恢复' : '暂停' }}
           </n-button>
-        </n-button-group>
-        <n-button size="small" @click="paused = !paused">
-          <template #icon>
-            <n-icon><component :is="paused ? PlayOutline : PauseOutline" /></n-icon>
-          </template>
-          {{ paused ? '恢复' : '暂停' }}
-        </n-button>
+        </n-space>
+        <n-space align="center">
+          <n-switch v-model:value="autoScroll" size="small">
+            <template #checked>自动滚动</template>
+            <template #unchecked>自动滚动</template>
+          </n-switch>
+          <n-button size="small" type="error" @click="clearLogs">
+            <template #icon>
+              <n-icon><TrashOutline /></n-icon>
+            </template>
+            清空
+          </n-button>
+        </n-space>
       </n-space>
-      <n-space align="center">
-        <n-switch v-model:value="autoScroll" size="small">
-          <template #checked>自动滚动</template>
-          <template #unchecked>自动滚动</template>
-        </n-switch>
-        <n-button size="small" type="error" @click="clearLogs">
-          <template #icon>
-            <n-icon><TrashOutline /></n-icon>
-          </template>
-          清空
-        </n-button>
-      </n-space>
-    </n-space>
+    </div>
 
     <div
       v-if="filteredLogs.length > 0"
       ref="scroller"
-      class="log-scroller"
-      style="flex: 1; background: #1e1e1e; border-radius: 4px; padding: 8px; font-family: monospace; font-size: 12px; line-height: 1.6;"
+      class="terminal-bg log-scroller"
+      style="flex: 1; padding: 8px 12px; overflow-y: auto;"
     >
       <div v-for="log in filteredLogs" :key="log._uid" style="display: flex; gap: 8px; padding: 1px 0;">
         <n-tag :type="levelColor(log.level)" size="small" :bordered="false" style="min-width: 56px; justify-content: center; font-size: 11px;">
           {{ log.level }}
         </n-tag>
-        <span style="color: #888; white-space: nowrap;">{{ formatTimestamp(log.timestamp) }}</span>
-        <span style="color: #6a9fb5; white-space: nowrap;">{{ log.target }}</span>
-        <span :style="messageStyle(log.level)">{{ log.displayMessage }}</span>
+        <span style="color: var(--text-3); white-space: nowrap;">{{ formatTimestamp(log.timestamp) }}</span>
+        <span style="color: var(--accent); white-space: nowrap;">{{ log.target }}</span>
+        <span :style="{ color: messageColor(log.level), wordBreak: 'break-word' }">{{ log.displayMessage }}</span>
       </div>
     </div>
     <div
       v-else
-      ref="scroller"
-      style="flex: 1; background: #1e1e1e; border-radius: 4px; padding: 8px; font-family: monospace; font-size: 12px;"
+      class="terminal-bg"
+      style="flex: 1; padding: 8px 12px;"
     >
       <div style="display: flex; justify-content: center; align-items: center; height: 100%;">
         <n-empty description="暂无日志" />

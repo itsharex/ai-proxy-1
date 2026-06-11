@@ -196,7 +196,7 @@
         <div :style="{
           height: jsonEditorFullscreen ? 'calc(100vh - 160px)' : '480px',
           overflow: 'hidden',
-          border: '1px solid #313244',
+          border: '1px solid var(--border)',
           borderRadius: '4px'
         }">
           <codemirror

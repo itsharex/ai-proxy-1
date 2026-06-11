@@ -112,7 +112,7 @@ const columns = [
     render: (row: RequestLog) =>
       h(NSpace, { size: 4, align: 'center' }, () => [
         h(NTag, { size: 'small', type: 'info' }, () => row.client_format),
-        h('span', { style: 'color: #999; font-size: 12px' }, () => '→'),
+        h('span', { style: 'color: var(--text-3); font-size: 12px' }, () => '→'),
         h(NTag, { size: 'small', type: 'warning' }, () => row.provider_format),
       ]),
   },

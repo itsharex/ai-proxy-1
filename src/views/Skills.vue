@@ -1187,10 +1187,10 @@ onMounted(async () => {
 
 <style scoped>
 .broken-symlink-row td {
-  color: #d03050 !important;
+  color: var(--error) !important;
 }
 .broken-symlink-row td .n-tag {
-  color: #d03050 !important;
+  color: var(--error) !important;
 }
 </style>
 
@@ -1199,7 +1199,7 @@ onMounted(async () => {
   height: 60vh;
   overflow: hidden;
   margin-top: 4px;
-  border: 1px solid var(--n-border-color, #3a3a3a);
+  border: 1px solid var(--border, #3a3a3a);
   border-radius: 4px;
 }
 .diff-cm-container .cm-editor {

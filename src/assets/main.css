@@ -1,9 +1,24 @@
 * {
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 *::-webkit-scrollbar {
-  display: none;
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-3);
 }
 
 .n-data-table-td,
@@ -13,8 +28,197 @@
   text-overflow: ellipsis;
 }
 
-/* 禁止输入框自动大写 */
 input, textarea, [contenteditable="true"] {
   text-transform: none;
   -webkit-text-transform: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Layout */
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--sidebar-border);
+  min-height: 56px;
+}
+
+.sidebar-logo-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #06B6D4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-logo-text {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  transition: opacity 0.2s;
+}
+
+.sidebar-section-label {
+  padding: 14px 16px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  user-select: none;
+}
+
+.sidebar-section-label:not(:first-child) {
+  border-top: 1px solid var(--sidebar-border);
+  margin-top: 4px;
+  padding-top: 14px;
+}
+
+.sidebar-footer {
+  padding: 12px;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 48px;
+  border-bottom: 1px solid var(--header-border);
+  background: var(--header-bg);
+}
+
+.header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.running {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+  animation: pulse-dot 2s infinite;
+}
+
+.status-dot.stopped {
+  background: var(--error);
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Stat tiles */
+.stat-tile {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  transition: box-shadow 0.2s, transform 0.2s;
+  cursor: default;
+}
+
+.stat-tile:hover {
+  box-shadow: var(--stat-card-hover-shadow);
+  transform: translateY(-1px);
+}
+
+.stat-tile-top {
+  height: 3px;
+  border-radius: 2px;
+  margin-bottom: 14px;
+}
+
+.stat-tile-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-1);
+  line-height: 1.2;
+  font-family: var(--font-mono);
+}
+
+.stat-tile-label {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+/* App cards */
+.app-card {
+  border-left: 3px solid var(--accent);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.app-card:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.app-card[data-type="claude_cli"],
+.app-card[data-type="claude_desktop"] {
+  border-left-color: #D97706;
+}
+
+.app-card[data-type="codex_cli"],
+.app-card[data-type="codex_desktop"] {
+  border-left-color: #0891B2;
+}
+
+.app-card[data-type="opencode_cli"] {
+  border-left-color: #16A34A;
+}
+
+/* Terminal log area */
+.terminal-bg {
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  border-radius: var(--radius-md);
+}
+
+.terminal-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--bg-elevated) 85%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Danger zone */
+.danger-zone {
+  border-left: 3px solid var(--error);
+  background: color-mix(in srgb, var(--error) 5%, var(--bg-elevated));
+}
+
+/* Transitions */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
