@@ -71,7 +71,7 @@
 
       </n-layout-sider>
       <n-layout>
-        <div class="header-bar">
+        <div class="header-bar" data-tauri-drag-region>
           <span class="header-title">{{ pageTitle }}</span>
           <n-space align="center" size="small">
             <n-button quaternary size="tiny" @click="toggleTheme" style="color: var(--text-2)">
@@ -107,7 +107,8 @@ import { useTheme } from './theme/use-theme'
 import UpdateNotification from './components/UpdateNotification.vue'
 import {
   HomeOutline,
-  ServerOutline,
+  CloudOutline,
+  GitNetworkOutline,
   DocumentTextOutline,
   TerminalOutline,
   AppsOutline,
@@ -163,9 +164,9 @@ const overviewMenu = [
 ]
 
 const manageMenu = [
-  { label: '供应商', key: '/providers', icon: renderIcon(ServerOutline) },
+  { label: '供应商', key: '/providers', icon: renderIcon(CloudOutline) },
   { label: '应用管理', key: '/apps', icon: renderIcon(AppsOutline) },
-  { label: 'MCP 管理', key: '/mcp', icon: renderIcon(ServerOutline) },
+  { label: 'MCP 管理', key: '/mcp', icon: renderIcon(GitNetworkOutline) },
   { label: '技能管理', key: '/skills', icon: renderIcon(BookOutline) },
   { label: '拦截规则', key: '/rules', icon: renderIcon(SettingsOutline) },
 ]

@@ -128,6 +128,15 @@ async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+#[cfg(feature = "desktop")]
+async fn set_window_theme(app: tauri::AppHandle, dark: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let theme = if dark { tauri::Theme::Dark } else { tauri::Theme::Light };
+        let _ = window.set_theme(Some(theme));
+    }
+}
+
 #[cfg(feature = "desktop")]
 fn start_proxy() -> (String, u16) {
     {
@@ -322,7 +331,7 @@ pub fn run() {
 
                 Ok(())
             })
-            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, update::check_for_update, update::download_update, update::open_update_file])
+            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, set_window_theme, update::check_for_update, update::download_update, update::open_update_file])
             .on_window_event(|window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();

@@ -13,10 +13,11 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "AI Proxy",
+        "title": "",
         "width": 1360,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Overlay"
       }
     ],
     "security": {

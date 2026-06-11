@@ -179,30 +179,32 @@
     <!-- Edit SKILL.md Modal -->
     <n-modal
       v-model:show="showEditMdModal"
-      preset="dialog"
+      preset="card"
       :title="`编辑 SKILL.md - ${editMdSkill?.name || ''}`"
-      positive-text="保存"
-      negative-text="取消"
-      :loading="editMdLoading"
-      @positive-click="handleSaveMd"
-      :style="editMdFullscreen ? 'width: 95vw; height: 90vh' : 'width: 680px'"
+      :style="editMdFullscreen ? 'width: 95vw' : 'width: 680px'"
+      :bordered="false"
+      :mask-closable="false"
     >
       <template #header-extra>
-        <n-button quaternary size="small" @click="editMdFullscreen = !editMdFullscreen">
-          <template #icon>
-            <n-icon><contract-outline v-if="editMdFullscreen" /><expand-outline v-else /></n-icon>
-          </template>
-        </n-button>
+        <n-space align="center" size="small">
+          <n-button quaternary size="small" @click="editMdFullscreen = !editMdFullscreen">
+            <template #icon>
+              <n-icon><contract-outline v-if="editMdFullscreen" /><expand-outline v-else /></n-icon>
+            </template>
+          </n-button>
+          <n-button @click="showEditMdModal = false">取消</n-button>
+          <n-button type="primary" :loading="editMdLoading" @click="handleSaveMd">保存</n-button>
+        </n-space>
       </template>
-      <div :style="{ position: 'relative', height: editMdFullscreen ? 'calc(90vh - 140px)' : '480px' }">
-        <n-spin :show="editMdContentLoaded" style="position: absolute; inset: 0">
-          <codemirror
+      <n-spin :show="editMdLoading">
+        <div :style="{ position: 'relative', height: editMdFullscreen ? 'calc(90vh - 180px)' : '480px' }">
+          <Codemirror
             v-model="editMdContent"
-            :style="{ height: editMdFullscreen ? 'calc(90vh - 140px)' : '480px' }"
+            :style="{ height: editMdFullscreen ? 'calc(90vh - 180px)' : '480px' }"
             :extensions="mdEditorExtensions"
           />
-        </n-spin>
-      </div>
+        </div>
+      </n-spin>
     </n-modal>
 
     <!-- Marketplace Search Modal -->
@@ -266,27 +268,32 @@
       v-model:show="showDiffModal"
       preset="card"
       title="技能内容对比"
-      style="width: 90vw; max-width: 1200px"
+      :style="diffFullscreen ? 'width: 98vw; height: 96vh' : 'width: 90vw; max-width: 1200px'"
       :bordered="false"
       :mask-closable="false"
     >
       <template #header-extra>
-        <n-space>
-          <n-button @click="destroyDiffEditors(); showDiffModal = false">取消</n-button>
+        <n-space align="center">
+          <n-button quaternary size="small" @click="diffFullscreen = !diffFullscreen">
+            <template #icon>
+              <n-icon><contract-outline v-if="diffFullscreen" /><expand-outline v-else /></n-icon>
+            </template>
+          </n-button>
+          <n-button @click="destroyDiffEditors(); diffFullscreen = false; showDiffModal = false">取消</n-button>
           <n-button type="error" :loading="copyForceLoading" @click="handleForceCopy">
             覆盖并复制
           </n-button>
         </n-space>
       </template>
       <n-spin :show="diffLoading">
-        <div style="display: flex; gap: 16px;">
+        <div :style="{ display: 'flex', gap: '16px' }">
           <div style="flex: 1; min-width: 0;">
             <n-text strong>源技能 ({{ diffSourceName }})</n-text>
-            <div ref="diffSourceCmRef" class="diff-cm-container"></div>
+            <div ref="diffSourceCmRef" class="diff-cm-container" :style="diffFullscreen ? { height: 'calc(96vh - 180px)' } : undefined"></div>
           </div>
           <div style="flex: 1; min-width: 0;">
             <n-text strong>全局源同名技能 ({{ diffTargetName }})</n-text>
-            <div ref="diffTargetCmRef" class="diff-cm-container"></div>
+            <div ref="diffTargetCmRef" class="diff-cm-container" :style="diffFullscreen ? { height: 'calc(96vh - 180px)' } : undefined"></div>
           </div>
         </div>
       </n-spin>
@@ -308,11 +315,12 @@ import {
 } from 'naive-ui'
 import { api } from '../api'
 import { ApiError } from '../api'
+import { Codemirror } from 'vue-codemirror'
 import { basicSetup } from 'codemirror'
 import { markdown } from '@codemirror/lang-markdown'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { EditorState, type Extension } from '@codemirror/state'
 import { ExpandOutline, ContractOutline } from '@vicons/ionicons5'
 import type {
   SkillSourceWithCount,
@@ -325,7 +333,7 @@ import type {
 
 const message = useMessage()
 const dialog = useDialog()
-const mdEditorExtensions = [basicSetup, markdown(), oneDark]
+const mdEditorExtensions: Extension[] = [...(basicSetup as Extension[]), markdown(), oneDark]
 const loading = ref(false)
 const scanLoading = ref(false)
 const discoverLoading = ref(false)
@@ -364,7 +372,6 @@ const installTargetSourceIds = ref<string[]>([])
 // Edit MD Modal
 const showEditMdModal = ref(false)
 const editMdLoading = ref(false)
-const editMdContentLoaded = ref(false)
 const editMdSkill = ref<Skill | null>(null)
 const editMdContent = ref('')
 const editMdFullscreen = ref(false)
@@ -388,6 +395,7 @@ const marketplaceInstalling = ref<string | null>(null)
 const showDiffModal = ref(false)
 const diffLoading = ref(false)
 const copyForceLoading = ref(false)
+const diffFullscreen = ref(false)
 const diffSourceContent = ref('')
 const diffTargetContent = ref('')
 const diffSourceName = ref('')
@@ -407,7 +415,7 @@ function createDiffEditor(container: HTMLElement | null, content: string): Edito
   const state = EditorState.create({
     doc: content,
     extensions: [
-      basicSetup,
+      ...(basicSetup as Extension[]),
       markdown(),
       oneDark,
       EditorView.lineWrapping,
@@ -961,7 +969,6 @@ async function doDelete(skillId: string) {
 async function openEditMdModal(skill: Skill) {
   editMdSkill.value = skill
   editMdContent.value = ''
-  editMdContentLoaded.value = true
   showEditMdModal.value = true
 
   try {
@@ -969,8 +976,6 @@ async function openEditMdModal(skill: Skill) {
     editMdContent.value = detail.skill_md_content || ''
   } catch (err) {
     message.error(`加载 SKILL.md 失败: ${err}`)
-  } finally {
-    editMdContentLoaded.value = false
   }
 }
 
@@ -1208,6 +1213,22 @@ onMounted(async () => {
   height: 100%;
 }
 .diff-cm-container .cm-scroller {
+  overflow: auto !important;
+}
+.n-spin-container .n-spin-content {
+  height: 100%;
+}
+.n-spin-container .n-spin-content > div {
+  height: 100%;
+}
+.n-spin-container codemirror {
+  display: block;
+  height: 100%;
+}
+.n-spin-container .cm-editor {
+  height: 100%;
+}
+.n-spin-container .cm-scroller {
   overflow: auto !important;
 }
 </style>

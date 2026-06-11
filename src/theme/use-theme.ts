@@ -18,6 +18,8 @@ function getSystemIsDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+const isTauri = !!window.__TAURI_INTERNALS__
+
 const mode = ref<ThemeMode>(getStoredMode())
 const systemDark = ref(getSystemIsDark())
 
@@ -32,8 +34,17 @@ const isDark = computed(() => {
   return mode.value === 'dark'
 })
 
+async function syncWindowTheme(dark: boolean) {
+  if (!isTauri) return
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    await invoke('set_window_theme', { dark })
+  } catch {}
+}
+
 watch(isDark, (dark) => {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+  syncWindowTheme(dark)
 }, { immediate: true })
 
 watch(mode, (m) => {
