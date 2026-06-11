@@ -194,13 +194,15 @@
           </template>
         </n-button>
       </template>
-      <n-spin :show="editMdContentLoaded">
-        <codemirror
-          v-model="editMdContent"
-          :style="{ height: editMdFullscreen ? 'calc(90vh - 140px)' : '480px' }"
-          :extensions="mdEditorExtensions"
-        />
-      </n-spin>
+      <div :style="{ position: 'relative', height: editMdFullscreen ? 'calc(90vh - 140px)' : '480px' }">
+        <n-spin :show="editMdContentLoaded" style="position: absolute; inset: 0">
+          <codemirror
+            v-model="editMdContent"
+            :style="{ height: editMdFullscreen ? 'calc(90vh - 140px)' : '480px' }"
+            :extensions="mdEditorExtensions"
+          />
+        </n-spin>
+      </div>
     </n-modal>
 
     <!-- Marketplace Search Modal -->
