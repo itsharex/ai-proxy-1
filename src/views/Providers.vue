@@ -1,24 +1,70 @@
 <template>
   <n-space vertical size="large">
-    <n-card>
-      <template #header>
-        <n-space justify="space-between" align="center">
-          <n-text strong>供应商管理</n-text>
-          <n-button type="primary" @click="openCreateModal">
-            添加供应商
-          </n-button>
-        </n-space>
-      </template>
+    <div class="provider-header">
+      <n-text strong style="font-size: 16px">供应商管理</n-text>
+      <n-button type="primary" size="small" @click="openCreateModal">
+        添加供应商
+      </n-button>
+    </div>
 
-      <n-spin :show="loading">
-        <n-data-table
-          :columns="columns"
-          :data="providers"
-          :row-key="(row: Provider) => row.id"
-          :bordered="false"
-        />
-      </n-spin>
-    </n-card>
+    <n-spin :show="loading">
+      <div class="provider-grid">
+        <div
+          v-for="p in providers"
+          :key="p.id"
+          class="provider-card"
+          :class="{ 'provider-card--disabled': !p.enabled }"
+          :data-format="p.format"
+        >
+          <div class="provider-card-bar" />
+          <div class="provider-card-header">
+            <div class="provider-card-title">
+              <span class="provider-card-name">{{ p.name }}</span>
+              <n-tag size="small" :type="formatColorMap[p.format] || 'default'" round>
+                {{ p.format }}
+              </n-tag>
+            </div>
+            <n-switch :value="p.enabled" size="small" @update:value="(v: boolean) => handleToggle(p.id, v)" />
+          </div>
+
+          <n-text depth="3" class="provider-card-url font-mono">{{ p.base_url }}</n-text>
+
+          <div class="provider-card-models">
+            <template v-if="p.models.length">
+              <n-tag
+                v-for="m in p.models"
+                :key="m.model_name"
+                size="small"
+                round
+                :bordered="false"
+                type="default"
+                class="provider-model-tag"
+              >
+                {{ m.model_name }}
+              </n-tag>
+            </template>
+            <n-text v-else depth="3" style="font-size: 12px">暂无模型</n-text>
+          </div>
+
+          <div class="provider-card-actions">
+            <n-button quaternary size="tiny" type="info" @click="openTestModal(p)">
+              测试
+            </n-button>
+            <n-button quaternary size="tiny" type="primary" @click="openEditModal(p)">
+              编辑
+            </n-button>
+            <n-popconfirm @positive-click="handleDelete(p.id)">
+              <template #trigger>
+                <n-button quaternary size="tiny" type="error">删除</n-button>
+              </template>
+              确认删除此供应商？
+            </n-popconfirm>
+          </div>
+        </div>
+      </div>
+
+      <n-empty v-if="!loading && providers.length === 0" description="暂无供应商" style="padding: 48px 0" />
+    </n-spin>
 
     <n-modal
       v-model:show="showModal"
@@ -149,8 +195,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
-import { NTag, NPopconfirm, NButton, NSpace, NSwitch, useMessage } from 'naive-ui'
+import { ref, onMounted } from 'vue'
+import { useMessage } from 'naive-ui'
 import { api } from '../api'
 import type { Provider } from '../types'
 
@@ -198,64 +244,6 @@ const formatColorMap: Record<string, string> = {
   anthropic: 'warning',
   gemini: 'purple',
 }
-
-const columns = [
-  { title: '名称', key: 'name', width: 160 },
-  { title: 'Base URL', key: 'base_url', ellipsis: { tooltip: true } },
-  {
-    title: '格式',
-    key: 'format',
-    width: 140,
-    render: (row: Provider) => {
-      const color = formatColorMap[row.format] || 'default'
-      return h(NTag, { size: 'small', type: color as never }, () => row.format)
-    },
-  },
-  {
-    title: '模型数',
-    key: 'models_count',
-    width: 80,
-    render: (row: Provider) => row.models.length,
-  },
-  {
-    title: '状态',
-    key: 'enabled',
-    width: 100,
-    render: (row: Provider) =>
-      h(NSwitch, {
-        value: row.enabled,
-        onUpdateValue: (val: boolean) => handleToggle(row.id, val),
-        size: 'small',
-      }),
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 220,
-    render: (row: Provider) =>
-      h(NSpace, { size: 4 }, () => [
-        h(
-          NButton,
-          { size: 'small', quaternary: true, type: 'info', onClick: () => openTestModal(row) },
-          () => '测试'
-        ),
-        h(
-          NButton,
-          { size: 'small', quaternary: true, type: 'primary', onClick: () => openEditModal(row) },
-          () => '编辑'
-        ),
-        h(
-          NPopconfirm,
-          { onPositiveClick: () => handleDelete(row.id) },
-          {
-            trigger: () =>
-              h(NButton, { size: 'small', quaternary: true, type: 'error' }, () => '删除'),
-            default: () => '确认删除此供应商？',
-          }
-        ),
-      ]),
-  },
-]
 
 function addModel() {
   form.value.models = [
@@ -423,3 +411,109 @@ async function fetchProviders() {
 
 onMounted(fetchProviders)
 </script>
+
+<style scoped>
+.provider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.provider-card {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: box-shadow 0.2s, transform 0.15s;
+  overflow: hidden;
+}
+
+.provider-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.provider-card--disabled {
+  opacity: 0.5;
+}
+
+.provider-card-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--accent);
+}
+
+.provider-card[data-format="completions"] .provider-card-bar {
+  background: var(--success);
+}
+.provider-card[data-format="responses"] .provider-card-bar {
+  background: var(--info);
+}
+.provider-card[data-format="anthropic"] .provider-card-bar {
+  background: var(--warning);
+}
+.provider-card[data-format="gemini"] .provider-card-bar {
+  background: #a855f7;
+}
+
+.provider-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.provider-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.provider-card-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.provider-card-url {
+  font-size: 12px;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.provider-card-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+}
+
+.provider-model-tag {
+  font-size: 11px;
+  background: var(--bg-sunken) !important;
+}
+
+.provider-card-actions {
+  display: flex;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+</style>
