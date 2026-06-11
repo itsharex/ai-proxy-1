@@ -12,7 +12,11 @@
             clearable
             style="width: 220px"
             @keyup.enter="handleQuery"
-          />
+          >
+            <template #prefix>
+              <span style="opacity: 0.5">🔍</span>
+            </template>
+          </n-input>
           <n-date-picker
             v-model:value="dateRange"
             type="daterange"
