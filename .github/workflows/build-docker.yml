@@ -29,6 +29,7 @@ jobs:
   build-and-push:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
+    environment: ai-proxy-env
 
     steps:
       - name: Checkout code
