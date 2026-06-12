@@ -3,7 +3,7 @@ use axum::extract::{Path, Query};
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::routing;
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use crate::db::get_pool;
 use crate::key::store::encrypt_api_key;
@@ -373,15 +373,10 @@ async fn get_usage(
         sqlx::query_as(sql).bind(&param).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
     };
 
-    // Filter out models that no longer exist in provider_models
-    let active_models: HashSet<String> = sqlx::query_scalar("SELECT DISTINCT model_name FROM provider_models")
-        .fetch_all(pool).await.unwrap_or_default().into_iter().collect();
-
     let pricing = PricingTable::default();
     let mut total_cost = 0.0;
     let mut total_requests = 0i64;
     let stats: Vec<UsageStat> = rows.into_iter()
-        .filter(|(model, _, _, _, _, _, _)| active_models.contains(model))
         .map(|(model, provider_name, prompt_tokens, completion_tokens, total_tokens, request_count, cached_tokens)| {
         let cost_estimate = pricing.get_cost(&model, prompt_tokens as u32, completion_tokens as u32);
         total_cost += cost_estimate;
@@ -422,11 +417,7 @@ async fn get_usage_trend(
         sqlx::query_as(sql).bind(&param).fetch_all(pool).await.map_err(|e| err_json(e.to_string()))?
     };
 
-    let active_models: HashSet<String> = sqlx::query_scalar("SELECT DISTINCT model_name FROM provider_models")
-        .fetch_all(pool).await.unwrap_or_default().into_iter().collect();
-
     Ok(ok(rows.into_iter()
-        .filter(|(_, model, _, _, _)| active_models.contains(model))
         .map(|(date, model, prompt_tokens, completion_tokens, total_tokens)| {
             UsageTrendPoint { date, model, prompt_tokens, completion_tokens, total_tokens }
         }).collect()))
