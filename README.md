@@ -1,6 +1,6 @@
 # AI Proxy
 
-本地 AI/LLM 代理服务，统一管理多个大模型供应商的 API 调用。基于 Tauri 2 桌面应用（Rust 后端 + Vue 3 前端），开箱即用。
+本地 AI/LLM 代理服务，统一管理多个大模型供应商的 API 调用。基于 Tauri 2 桌面应用（Rust 后端 + Vue 3 前端），开箱即用；同时支持 `server` feature 构建为无头服务（Headless Server），可通过 Docker 部署，供团队或多设备共享使用。
 
 **仓库地址：** [GitHub](https://github.com/mrhuangyong/ai-proxy) | [Gitee](https://gitee.com/mrhy/ai-proxy)
 
@@ -74,6 +74,15 @@
 - **自动更新** — 检测新版本后自动下载安装包到下载目录，一键安装
 - **开机自启** — 支持 macOS LaunchAgent 开机自启动
 
+### 服务化部署
+
+- **无头服务** — 通过 `server` feature 编译为纯 CLI 服务，无 Tauri/GUI 依赖
+- **Docker 支持** — 提供官方镜像 `mrhua382812/ai-proxy-server`，支持 linux/amd64 和 linux/arm64
+- **JWT 认证** — 管理 API 通过 JWT Token 认证，支持登录/登出
+- **代理 API Key 认证** — 代理端点支持可选的 API Key 认证（通过 Web UI 配置）
+- **数据持久化** — SQLite 数据库存储，支持 Docker Volume 挂载持久化
+- **WebSocket 日志** — 运行日志通过 WebSocket 实时推送，替代桌面版的 Tauri Emitter
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -83,6 +92,7 @@
 | 代理服务 | Axum 0.7 |
 | 数据库 | SQLite (SQLx) |
 | 构建 | Vite 6 + pnpm |
+| 容器化 | Docker + Docker Compose |
 
 ## 快速开始
 
@@ -104,6 +114,28 @@ pnpm tauri dev
 ```bash
 pnpm tauri build
 ```
+
+### 服务版快速开始（Docker）
+
+```bash
+# 1. 复制环境变量模板并编辑
+# MASTER_KEY/JWT_SECRET 必须设置且重启后保持一致
+cp .env.example .env
+# 编辑 .env
+
+# 2. 启动服务
+docker-compose up -d
+
+# 3. 查看日志（首次启动会打印管理员密码）
+docker-compose logs -f
+
+# 4. 访问服务
+# Web UI: http://localhost:7860
+# API:    http://localhost:7860
+# 默认管理员: admin / (.env 中设置的密码，未设置则首次启动随机生成)
+```
+
+更详细的部署方式（二进制、systemd、反向代理、客户端配置）请参考 [docs/server-deployment.md](docs/server-deployment.md)。
 
 ## 代理端点
 
@@ -190,7 +222,7 @@ src-tauri/                  # Rust 后端
   src/
     lib.rs                  # 库入口，模块注册，cfg(desktop/server) 特性门控
     main.rs                 # 桌面版入口
-    server_main.rs          # 服务版入口（占位）
+    server_main.rs          # 服务版入口（clap 参数解析、JWT 校验、启动服务器）
     error.rs                # ProxyError 统一错误类型
     http.rs                 # 共享 reqwest::Client
     server/
@@ -211,13 +243,13 @@ src-tauri/                  # Rust 后端
     mcp/                    # MCP 服务器管理 + 应用配置同步
     skill/                  # Skill 来源管理、扫描、安装
     apps/                   # 应用管理与配置生成（Codex CLI/Desktop、Claude CLI/Desktop）
-    auth/                   # 服务版 JWT 认证（用户登录、Token 验证）
+    auth/                   # 服务版 JWT 认证（登录、Token 生成与验证）
     usage/                  # 用量追踪与成本估算
     logging/                # 请求日志 + 运行日志广播层
     db/                     # SQLite 连接池（WAL 模式）+ 编号迁移
     update.rs               # GitHub Release 更新检测与自动下载
     update_timer.rs         # 定时检查更新
-  migrations/               # SQLite 迁移脚本（001–013）
+  migrations/               # SQLite 迁移脚本（001–016）
 ```
 
 ## 构建模式
@@ -234,8 +266,28 @@ src-tauri/                  # Rust 后端
 pnpm tauri build
 
 # 服务版
-cd src-tauri && cargo build --features server --bin ai-proxy-server
+cd src-tauri && cargo build --release --features server --no-default-features
 ```
+
+### Docker 构建
+
+```bash
+# 构建本地镜像
+docker build -t ai-proxy-server .
+
+# 或使用 Docker Compose 构建并启动
+docker-compose up --build -d
+```
+
+### 预构建镜像
+
+官方镜像已推送至 Docker Hub，支持多架构：
+
+```bash
+docker pull mrhua382812/ai-proxy-server:latest
+```
+
+支持平台：`linux/amd64`、`linux/arm64`。
 
 ## GitHub Actions 自动打包
 
@@ -259,6 +311,8 @@ git push origin v0.5.0
 - `AI.Proxy_{version}_aarch64.dmg` — macOS Apple Silicon
 - `AI.Proxy_{version}_x64-setup.exe` — Windows 安装包
 - `AI.Proxy_{version}_x64_en-US.msi` — Windows MSI
+
+服务版镜像会通过 CI 自动构建并推送至 Docker Hub（`mrhua382812/ai-proxy-server`），推送 tag 或合并到 main 分支时触发。详见 `.github/workflows/build-docker.yml`。
 
 ## License
 
