@@ -22,18 +22,34 @@ pub fn create_router() -> Router {
         )
         .layer(middleware::from_fn(auth_middleware));
 
-    let mut router = Router::new()
+    let router = Router::new()
         .merge(proxy_routes)
         .route("/health", get(health_check))
-        .nest("/api", api::api_routes())
-        .nest("/api/mcp", mcp::mcp_routes())
-        .nest("/api/skills", skill::skill_routes());
+        .nest("/api", api::api_routes());
 
     // Server mode: mount auth routes (login/logout/me)
     #[cfg(feature = "server")]
-    {
-        router = router.nest("/api/auth", crate::auth::handlers::auth_routes());
-    }
+    let router = {
+        let router = router.nest("/api/auth", crate::auth::handlers::auth_routes());
+        let router = router.nest(
+            "/api/mcp",
+            mcp::mcp_routes().layer(middleware::from_fn(
+                crate::auth::middleware::jwt_auth_middleware,
+            )),
+        );
+        router.nest(
+            "/api/skills",
+            skill::skill_routes().layer(middleware::from_fn(
+                crate::auth::middleware::jwt_auth_middleware,
+            )),
+        )
+    };
+
+    #[cfg(not(feature = "server"))]
+    let router = {
+        let router = router.nest("/api/mcp", mcp::mcp_routes());
+        router.nest("/api/skills", skill::skill_routes())
+    };
 
     router
 }

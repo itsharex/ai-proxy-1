@@ -1,7 +1,28 @@
 import { reactive } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { isTauri } from '../utils/env'
 
 const DEFAULT_PROXY_PORT = 7860
+const TOKEN_KEY = 'ai_proxy_token'
+
+export const LOGIN_ROUTE = '/login'
+
+function getStoredToken(): string | null {
+  if (isTauri) return null
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function clearStoredToken() {
+  if (!isTauri) {
+    localStorage.removeItem(TOKEN_KEY)
+  }
+}
+
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler
+}
 
 export class ApiError extends Error {
   status: number
@@ -117,14 +138,24 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   await ensureInitialized()
 
   const requestUrl = buildApiUrl(path)
+  const token = getStoredToken()
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token && !isTauri) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
   let res: Response
   try {
     res = await fetch(requestUrl, {
-      headers: { 'Content-Type': 'application/json' },
       ...options,
+      headers: { ...headers, ...(options?.headers as Record<string, string> | undefined) },
     })
   } catch (error) {
     throw error
+  }
+  if (res.status === 401 && !isTauri) {
+    clearStoredToken()
+    if (onUnauthorized) onUnauthorized()
+    throw new ApiError('Unauthorized', 401)
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))

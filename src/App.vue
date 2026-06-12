@@ -2,7 +2,10 @@
   <n-config-provider :locale="zhCN" :date-locale="dateZhCN" :theme="naiveTheme" :theme-overrides="themeOverrides">
     <n-dialog-provider>
     <n-message-provider>
-    <n-layout style="height: 100vh" has-sider>
+    <n-layout v-if="isLoginRoute" style="height: 100vh">
+      <router-view />
+    </n-layout>
+    <n-layout v-else style="height: 100vh" has-sider>
       <n-layout-sider
         collapse-mode="width"
         :collapsed-width="64"
@@ -83,6 +86,14 @@
               <span class="status-dot" :class="serverRunning ? 'running' : 'stopped'" />
               <span>{{ serverRunning ? `127.0.0.1:${proxyPort}` : '已停止' }}</span>
             </n-space>
+            <n-dropdown v-if="!isTauri && authStore.isAuthenticated" trigger="click" :options="userMenuOptions" @select="handleUserMenuSelect">
+              <n-button quaternary size="tiny" style="color: var(--text-2)">
+                <template #icon>
+                  <n-icon size="16"><PersonCircleOutline /></n-icon>
+                </template>
+                {{ authStore.user?.username || 'admin' }}
+              </n-button>
+            </n-dropdown>
           </n-space>
         </div>
         <n-layout-content content-style="padding: 20px 24px;">
@@ -102,7 +113,8 @@ import { useRouter, useRoute } from 'vue-router'
 import { NIcon, zhCN, dateZhCN } from 'naive-ui'
 import { listen } from '@tauri-apps/api/event'
 import { isTauri } from './utils/env'
-import { apiState, initApi } from './api'
+import { apiState, initApi, setUnauthorizedHandler } from './api'
+import { useAuthStore } from './stores/auth'
 import { useTheme } from './theme/use-theme'
 import UpdateNotification from './components/UpdateNotification.vue'
 import {
@@ -116,6 +128,8 @@ import {
   BookOutline,
   SunnyOutline,
   MoonOutline,
+  PersonCircleOutline,
+  LogOutOutline,
 } from '@vicons/ionicons5'
 
 const { isDark, naiveTheme, themeOverrides, toggleTheme } = useTheme()
@@ -126,12 +140,34 @@ const collapsed = ref(false)
 const serverRunning = computed(() => apiState.initialized)
 const proxyPort = computed(() => apiState.proxyPort)
 const updateNotification = ref<InstanceType<typeof UpdateNotification> | null>(null)
+const authStore = useAuthStore()
+
+const isLoginRoute = computed(() => route.name === 'Login')
+
+const userMenuOptions = [
+  { label: '退出登录', key: 'logout', icon: () => h(NIcon, null, () => h(LogOutOutline)) },
+]
+
+async function handleUserMenuSelect(key: string) {
+  if (key === 'logout') {
+    await authStore.logout()
+    router.replace({ name: 'Login' })
+  }
+}
+
+setUnauthorizedHandler(() => {
+  router.replace({ name: 'Login' })
+})
 
 onMounted(async () => {
   try {
     await initApi()
   } catch {
     apiState.initialized = false
+  }
+
+  if (!isTauri) {
+    await authStore.fetchMe()
   }
 
   if (isTauri) {

@@ -1,4 +1,13 @@
-# Build stage
+# Frontend build stage
+FROM node:20-slim AS frontend
+WORKDIR /app
+RUN npm install -g pnpm@9
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+# Backend build stage
 FROM rust:latest AS builder
 WORKDIR /app
 
@@ -21,10 +30,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/src-tauri/target/release/ai-proxy-server /usr/local/bin/ai-proxy-server
+COPY --from=frontend /app/dist /app/static
 
 RUN mkdir -p /data && chmod 755 /data
 
 ENV AI_PROXY_DATA_DIR=/data
+ENV AI_PROXY_STATIC_DIR=/app/static
 ENV RUST_LOG=info
 
 EXPOSE 7860

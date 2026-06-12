@@ -13,7 +13,7 @@ struct Args {
     #[arg(short, long, default_value_t = 7860)]
     port: u16,
 
-    #[arg(short, long, default_value = "/var/lib/ai-proxy")]
+    #[arg(short, long, env = "AI_PROXY_DATA_DIR", default_value = "/var/lib/ai-proxy")]
     data_dir: PathBuf,
 
     #[arg(long, env = "AI_PROXY_ADMIN_PASSWORD")]
@@ -26,6 +26,13 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+
+    let jwt_secret = std::env::var("AI_PROXY_JWT_SECRET").unwrap_or_default();
+    if jwt_secret.is_empty() {
+        eprintln!("FATAL: AI_PROXY_JWT_SECRET environment variable is not set.");
+        eprintln!("       Set it to a random, sufficiently long string (e.g. `openssl rand -hex 32`).");
+        std::process::exit(1);
+    }
 
     tracing_subscriber::registry()
         .with(
