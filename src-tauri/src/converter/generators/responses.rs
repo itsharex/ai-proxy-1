@@ -135,9 +135,13 @@ impl FormatGenerator for ResponsesGenerator {
         if let Some(thinking) = &ir.thinking {
             if thinking.enabled {
                 if let Some(budget) = thinking.budget_tokens {
-                    let effort = if budget <= 5000 { "low" }
-                        else if budget <= 15000 { "medium" }
-                        else { "high" };
+                    let effort = if budget <= 5000 {
+                        "low"
+                    } else if budget <= 15000 {
+                        "medium"
+                    } else {
+                        "high"
+                    };
                     body["reasoning"] = json!({ "effort": effort });
                 }
             }
@@ -212,7 +216,10 @@ impl FormatGenerator for ResponsesGenerator {
                     "output": [],
                 }
             });
-            return format!("data: {}\n\ndata: {}\n\ndata: {}\n\n", text_done, item_done, completed);
+            return format!(
+                "data: {}\n\ndata: {}\n\ndata: {}\n\n",
+                text_done, item_done, completed
+            );
         }
 
         if let Some(thinking) = &chunk.delta_thinking {
@@ -238,7 +245,14 @@ impl FormatGenerator for ResponsesGenerator {
         String::new()
     }
 
-    fn generate_stream_start(&self, response_id: &str, model: &str, _input_tokens: u32, _output_tokens: u32, _cached_tokens: u32) -> Option<String> {
+    fn generate_stream_start(
+        &self,
+        response_id: &str,
+        model: &str,
+        _input_tokens: u32,
+        _output_tokens: u32,
+        _cached_tokens: u32,
+    ) -> Option<String> {
         let created = json!({
             "type": "response.created",
             "response": {
@@ -269,7 +283,10 @@ impl FormatGenerator for ResponsesGenerator {
                 "text": "",
             }
         });
-        Some(format!("data: {}\n\ndata: {}\n\ndata: {}\n\n", created, item_added, content_added))
+        Some(format!(
+            "data: {}\n\ndata: {}\n\ndata: {}\n\n",
+            created, item_added, content_added
+        ))
     }
 
     fn generate_response(&self, ir: &IrResponse) -> Result<Value, ProxyError> {
@@ -369,7 +386,11 @@ fn convert_message_content(parts: &[IrContentPart]) -> Value {
                 "type": "input_text",
                 "text": text,
             }),
-            IrContentPart::Image { url, data, media_type } => {
+            IrContentPart::Image {
+                url,
+                data,
+                media_type,
+            } => {
                 if let Some(image_url) = url {
                     json!({
                         "type": "input_image",
@@ -391,7 +412,11 @@ fn convert_message_content(parts: &[IrContentPart]) -> Value {
                 "name": name,
                 "arguments": input.to_string(),
             }),
-            IrContentPart::ToolResult { tool_use_id, content, .. } => json!({
+            IrContentPart::ToolResult {
+                tool_use_id,
+                content,
+                ..
+            } => json!({
                 "type": "function_call_output",
                 "call_id": tool_use_id,
                 "output": content,

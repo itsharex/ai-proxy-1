@@ -74,10 +74,7 @@ fn desktop_candidates(name: &str) -> Vec<PathBuf> {
                 local_app_data, name
             )),
             PathBuf::from(format!("C:\\Program Files\\{}\\{}.exe", name, name)),
-            PathBuf::from(format!(
-                "C:\\Program Files (x86)\\{}\\{}.exe",
-                name, name
-            )),
+            PathBuf::from(format!("C:\\Program Files (x86)\\{}\\{}.exe", name, name)),
             PathBuf::from(format!(
                 "{}\\Programs\\{}\\{}.exe",
                 local_app_data, name, name
@@ -207,18 +204,12 @@ async fn kill_existing_desktop(install_path: &str) {
 
     #[cfg(target_os = "macos")]
     {
-        let _ = quiet_command("pkill")
-            .args(["-x", &name])
-            .output()
-            .await;
+        let _ = quiet_command("pkill").args(["-x", &name]).output().await;
     }
 
     #[cfg(target_os = "linux")]
     {
-        let _ = quiet_command("pkill")
-            .args(["-x", &name])
-            .output()
-            .await;
+        let _ = quiet_command("pkill").args(["-x", &name]).output().await;
     }
 
     #[cfg(target_os = "windows")]

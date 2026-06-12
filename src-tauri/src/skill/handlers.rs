@@ -19,18 +19,17 @@ pub async fn list_sources() -> Json<ApiResponse<Vec<SkillSourceWithCount>>> {
     let pool = get_pool().await;
     manager::ensure_default_source(pool).await;
 
-    let sources: Vec<SkillSource> = match sqlx::query_as(
-        "SELECT * FROM skill_sources ORDER BY discovery_order, name",
-    )
-    .fetch_all(pool)
-    .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("list_sources error: {}", e);
-            return ok(vec![]);
-        }
-    };
+    let sources: Vec<SkillSource> =
+        match sqlx::query_as("SELECT * FROM skill_sources ORDER BY discovery_order, name")
+            .fetch_all(pool)
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("list_sources error: {}", e);
+                return ok(vec![]);
+            }
+        };
 
     let mut result = Vec::new();
     for source in sources {
@@ -131,12 +130,11 @@ pub async fn delete_source(
 ) -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
     let pool = get_pool().await;
 
-    let is_default: bool =
-        sqlx::query_scalar("SELECT is_default FROM skill_sources WHERE id = ?")
-            .bind(&id)
-            .fetch_one(pool)
-            .await
-            .unwrap_or(false);
+    let is_default: bool = sqlx::query_scalar("SELECT is_default FROM skill_sources WHERE id = ?")
+        .bind(&id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(false);
 
     if is_default {
         return Err(err_json("默认源不能删除"));
@@ -159,9 +157,7 @@ pub async fn discover() -> Result<Json<ApiResponse<Vec<SkillSource>>>, Json<ApiE
     Ok(ok(new_sources))
 }
 
-pub async fn list_skills(
-    Query(query): Query<SkillQuery>,
-) -> Json<ApiResponse<Vec<Skill>>> {
+pub async fn list_skills(Query(query): Query<SkillQuery>) -> Json<ApiResponse<Vec<Skill>>> {
     let pool = get_pool().await;
 
     let skills: Vec<Skill> = if let Some(source_id) = query.source_id {
@@ -285,9 +281,7 @@ pub async fn install_from_url(
 pub async fn scan() -> Result<Json<ApiResponse<()>>, Json<ApiError>> {
     let pool = get_pool().await;
     manager::ensure_default_source(pool).await;
-    manager::scan_all(pool)
-        .await
-        .map_err(|e| err_json(e))?;
+    manager::scan_all(pool).await.map_err(|e| err_json(e))?;
     Ok(ok(()))
 }
 

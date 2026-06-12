@@ -1,6 +1,6 @@
+use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
-use axum::routing::{get, post};
 use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,12 +13,15 @@ const JWT_SECRET_ENV: &str = "AI_PROXY_JWT_SECRET";
 const TOKEN_EXPIRATION_SECONDS: i64 = 24 * 3600;
 
 fn get_jwt_secret() -> String {
-    std::env::var(JWT_SECRET_ENV).unwrap_or_else(|_| {
-        "ai-proxy-default-jwt-secret-change-in-production".to_string()
-    })
+    std::env::var(JWT_SECRET_ENV)
+        .unwrap_or_else(|_| "ai-proxy-default-jwt-secret-change-in-production".to_string())
 }
 
-fn generate_token(user_id: &str, username: &str, role: &str) -> Result<String, jsonwebtoken::errors::Error> {
+fn generate_token(
+    user_id: &str,
+    username: &str,
+    role: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let secret = get_jwt_secret();
     let expiration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -40,16 +43,17 @@ fn generate_token(user_id: &str, username: &str, role: &str) -> Result<String, j
     )
 }
 
-pub async fn login(Json(body): Json<LoginRequest>) -> Result<Json<ApiResponse<LoginResponse>>, Json<ApiError>> {
+pub async fn login(
+    Json(body): Json<LoginRequest>,
+) -> Result<Json<ApiResponse<LoginResponse>>, Json<ApiError>> {
     let pool = get_pool().await;
 
-    let row: Option<(String, String, String)> = sqlx::query_as(
-        "SELECT id, password_hash, role FROM users WHERE username = ?",
-    )
-    .bind(&body.username)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| err_json(format!("Database error: {}", e)))?;
+    let row: Option<(String, String, String)> =
+        sqlx::query_as("SELECT id, password_hash, role FROM users WHERE username = ?")
+            .bind(&body.username)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| err_json(format!("Database error: {}", e)))?;
 
     let (user_id, password_hash, role) = match row {
         Some(r) => r,

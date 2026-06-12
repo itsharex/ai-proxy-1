@@ -52,11 +52,30 @@ pub enum IrRole {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum IrContentPart {
-    Text { text: String, citations: Option<Value> },
-    Thinking { text: String, signature: Option<String> },
-    Image { url: Option<String>, data: Option<String>, media_type: Option<String> },
-    ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String, tool_name: Option<String>, id: Option<String> },
+    Text {
+        text: String,
+        citations: Option<Value>,
+    },
+    Thinking {
+        text: String,
+        signature: Option<String>,
+    },
+    Image {
+        url: Option<String>,
+        data: Option<String>,
+        media_type: Option<String>,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        tool_name: Option<String>,
+        id: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

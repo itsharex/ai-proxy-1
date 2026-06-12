@@ -128,14 +128,26 @@ impl ProviderManager {
         .await
         .map_err(|e| crate::error::ProxyError::Database(e))?;
 
-        let target_model = matched.target_model.clone()
+        let target_model = matched
+            .target_model
+            .clone()
             .unwrap_or_else(|| matched.model_name.clone());
         let target_format = parse_client_format(&provider.format)?;
-        let endpoint_path = provider.endpoint_path.map(|p| {
-            if p.starts_with('/') { p } else { format!("/{}", p) }
-        }).unwrap_or_else(|| default_path_for_format(&target_format, &target_model));
+        let endpoint_path = provider
+            .endpoint_path
+            .map(|p| {
+                if p.starts_with('/') {
+                    p
+                } else {
+                    format!("/{}", p)
+                }
+            })
+            .unwrap_or_else(|| default_path_for_format(&target_format, &target_model));
 
-        info!("Route resolved: {} -> {} ({}) via {}", model, target_model, provider.format, provider.name);
+        info!(
+            "Route resolved: {} -> {} ({}) via {}",
+            model, target_model, provider.format, provider.name
+        );
 
         Ok(ResolvedRoute {
             provider_id: provider.id,
@@ -150,13 +162,11 @@ impl ProviderManager {
     /// Toggle the enabled state of a provider. Returns the new state.
     pub async fn toggle_enabled(provider_id: &str) -> Result<bool, crate::error::ProxyError> {
         let pool = get_pool().await;
-        let current: (i64,) = sqlx::query_as(
-            "SELECT enabled FROM providers WHERE id = ?",
-        )
-        .bind(provider_id)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| crate::error::ProxyError::Database(e))?;
+        let current: (i64,) = sqlx::query_as("SELECT enabled FROM providers WHERE id = ?")
+            .bind(provider_id)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| crate::error::ProxyError::Database(e))?;
 
         let new_enabled: i64 = if current.0 != 0 { 0 } else { 1 };
         let pool = get_pool().await;
@@ -167,11 +177,17 @@ impl ProviderManager {
             .await
             .map_err(|e| crate::error::ProxyError::Database(e))?;
 
-        info!("Provider {} enabled toggled to {}", provider_id, new_enabled != 0);
+        info!(
+            "Provider {} enabled toggled to {}",
+            provider_id,
+            new_enabled != 0
+        );
         Ok(new_enabled != 0)
     }
 
-    async fn fetch_models(provider_id: &str) -> Result<Vec<ProviderModel>, crate::error::ProxyError> {
+    async fn fetch_models(
+        provider_id: &str,
+    ) -> Result<Vec<ProviderModel>, crate::error::ProxyError> {
         let pool = get_pool().await;
         let rows: Vec<DbProviderModel> = sqlx::query_as(
             "SELECT id, provider_id, model_name, target_model, context_window, enabled, created_at
@@ -182,18 +198,23 @@ impl ProviderManager {
         .await
         .map_err(|e| crate::error::ProxyError::Database(e))?;
 
-        Ok(rows.into_iter().map(|r| ProviderModel {
-            id: r.id,
-            provider_id: r.provider_id,
-            model_name: r.model_name,
-            target_model: r.target_model,
-            context_window: r.context_window as u64,
-            enabled: r.enabled != 0,
-            created_at: r.created_at,
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| ProviderModel {
+                id: r.id,
+                provider_id: r.provider_id,
+                model_name: r.model_name,
+                target_model: r.target_model,
+                context_window: r.context_window as u64,
+                enabled: r.enabled != 0,
+                created_at: r.created_at,
+            })
+            .collect())
     }
 
-    async fn fetch_api_keys_info(provider_id: &str) -> Result<Vec<ApiKeyInfo>, crate::error::ProxyError> {
+    async fn fetch_api_keys_info(
+        provider_id: &str,
+    ) -> Result<Vec<ApiKeyInfo>, crate::error::ProxyError> {
         let pool = get_pool().await;
         let rows: Vec<DbApiKeyInfo> = sqlx::query_as(
             "SELECT id, label, is_active, usage_count, last_used_at, created_at
@@ -204,14 +225,17 @@ impl ProviderManager {
         .await
         .map_err(|e| crate::error::ProxyError::Database(e))?;
 
-        Ok(rows.into_iter().map(|r| ApiKeyInfo {
-            id: r.id,
-            label: r.label,
-            is_active: r.is_active != 0,
-            usage_count: r.usage_count as u32,
-            last_used_at: r.last_used_at,
-            created_at: r.created_at,
-        }).collect())
+        Ok(rows
+            .into_iter()
+            .map(|r| ApiKeyInfo {
+                id: r.id,
+                label: r.label,
+                is_active: r.is_active != 0,
+                usage_count: r.usage_count as u32,
+                last_used_at: r.last_used_at,
+                created_at: r.created_at,
+            })
+            .collect())
     }
 }
 

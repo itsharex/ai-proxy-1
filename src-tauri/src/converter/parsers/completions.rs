@@ -37,11 +37,18 @@ impl FormatParser for CompletionsParser {
                     arr.iter()
                         .filter_map(|p| match p["type"].as_str() {
                             Some("text") => Some(IrContentPart::Text {
-                                text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                text: p
+                                    .get("text")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string(),
                                 citations: None,
                             }),
                             Some("image_url") => {
-                                let url_str = p["image_url"].get("url").and_then(|v| v.as_str()).unwrap_or("");
+                                let url_str = p["image_url"]
+                                    .get("url")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
                                 if let Some(rest) = url_str.strip_prefix("data:") {
                                     if let Some(semi) = rest.find(';') {
                                         let media_type = rest[..semi].to_string();
@@ -83,32 +90,42 @@ impl FormatParser for CompletionsParser {
                     vec![]
                 };
 
-                let tool_calls = m.get("tool_calls").and_then(|tc| {
-                    let calls: Vec<IrToolCall> = tc
-                        .as_array()?
-                        .iter()
-                        .filter_map(|tc| {
-                            let func = tc.get("function")?;
-                            Some(IrToolCall {
-                                id: tc.get("id")?.as_str()?.to_string(),
-                                name: func.get("name")?.as_str()?.to_string(),
-                                arguments: func.get("arguments")?.as_str()?.to_string(),
+                let tool_calls = m
+                    .get("tool_calls")
+                    .and_then(|tc| {
+                        let calls: Vec<IrToolCall> = tc
+                            .as_array()?
+                            .iter()
+                            .filter_map(|tc| {
+                                let func = tc.get("function")?;
+                                Some(IrToolCall {
+                                    id: tc.get("id")?.as_str()?.to_string(),
+                                    name: func.get("name")?.as_str()?.to_string(),
+                                    arguments: func.get("arguments")?.as_str()?.to_string(),
+                                })
                             })
-                        })
-                        .collect();
-                    if calls.is_empty() { None } else { Some(calls) }
-                }).or_else(|| {
-                    m.get("function_call").and_then(|fc| {
-                        let name = fc.get("name")?.as_str()?.to_string();
-                        Some(vec![IrToolCall {
-                            id: name.clone(),
-                            name,
-                            arguments: fc.get("arguments")?.as_str()?.to_string(),
-                        }])
+                            .collect();
+                        if calls.is_empty() {
+                            None
+                        } else {
+                            Some(calls)
+                        }
                     })
-                });
+                    .or_else(|| {
+                        m.get("function_call").and_then(|fc| {
+                            let name = fc.get("name")?.as_str()?.to_string();
+                            Some(vec![IrToolCall {
+                                id: name.clone(),
+                                name,
+                                arguments: fc.get("arguments")?.as_str()?.to_string(),
+                            }])
+                        })
+                    });
 
-                let tool_call_id = m.get("tool_call_id").and_then(|v| v.as_str()).map(String::from)
+                let tool_call_id = m
+                    .get("tool_call_id")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
                     .or_else(|| {
                         if m["role"].as_str() == Some("function") {
                             m.get("name").and_then(|v| v.as_str()).map(String::from)
@@ -144,10 +161,17 @@ impl FormatParser for CompletionsParser {
         }
         for msg in &mut ir_messages {
             if msg.role == IrRole::Tool {
-                tracing::warn!("TOOL PARSE: tool_call_id={:?}, name={:?}", msg.tool_call_id, msg.name);
+                tracing::warn!(
+                    "TOOL PARSE: tool_call_id={:?}, name={:?}",
+                    msg.tool_call_id,
+                    msg.name
+                );
                 if let Some(ref call_id) = msg.tool_call_id {
                     if !all_ids.contains(call_id) {
-                        tracing::warn!("TOOL PARSE: call_id={} not in all_ids, trying name_to_id", call_id);
+                        tracing::warn!(
+                            "TOOL PARSE: call_id={} not in all_ids, trying name_to_id",
+                            call_id
+                        );
                         if let Some(real_id) = name_to_id.get(call_id).cloned() {
                             tracing::warn!("TOOL PARSE: remapped {} -> {}", call_id, real_id);
                             msg.tool_call_id = Some(real_id);
@@ -165,8 +189,14 @@ impl FormatParser for CompletionsParser {
                         let func = tool.get("function")?;
                         Some(IrTool {
                             name: func.get("name")?.as_str()?.to_string(),
-                            description: func.get("description").and_then(|v| v.as_str()).map(String::from),
-                            input_schema: func.get("parameters").cloned().unwrap_or(json!({"type": "object"})),
+                            description: func
+                                .get("description")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            input_schema: func
+                                .get("parameters")
+                                .cloned()
+                                .unwrap_or(json!({"type": "object"})),
                             strict: func.get("strict").and_then(|v| v.as_bool()),
                         })
                     })
@@ -179,7 +209,8 @@ impl FormatParser for CompletionsParser {
             metadata.insert("user".into(), user.clone());
         }
 
-        let max_tokens = body.get("max_completion_tokens")
+        let max_tokens = body
+            .get("max_completion_tokens")
             .or_else(|| body.get("max_tokens"))
             .and_then(|v| v.as_u64())
             .map(|v| v as u32);
@@ -202,23 +233,37 @@ impl FormatParser for CompletionsParser {
             messages: ir_messages,
             tools,
             tool_choice: body.get("tool_choice").cloned(),
-            temperature: body.get("temperature").and_then(|v| v.as_f64()).map(|v| v as f32),
+            temperature: body
+                .get("temperature")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
             top_p: body.get("top_p").and_then(|v| v.as_f64()).map(|v| v as f32),
             top_k: None,
             max_tokens,
-            stream: body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false),
+            stream: body
+                .get("stream")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             stop_sequences: body.get("stop").and_then(|v| {
                 if v.is_string() {
                     Some(vec![v.as_str()?.to_string()])
                 } else {
                     v.as_array().map(|arr| {
-                        arr.iter().filter_map(|s| s.as_str().map(String::from)).collect()
+                        arr.iter()
+                            .filter_map(|s| s.as_str().map(String::from))
+                            .collect()
                     })
                 }
             }),
             response_format: body.get("response_format").cloned(),
-            presence_penalty: body.get("presence_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
-            frequency_penalty: body.get("frequency_penalty").and_then(|v| v.as_f64()).map(|v| v as f32),
+            presence_penalty: body
+                .get("presence_penalty")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
+            frequency_penalty: body
+                .get("frequency_penalty")
+                .and_then(|v| v.as_f64())
+                .map(|v| v as f32),
             seed: body.get("seed").and_then(|v| v.as_u64()),
             thinking,
             stream_options: body.get("stream_options").cloned(),
@@ -263,19 +308,32 @@ impl FormatParser for CompletionsParser {
                         Some(IrToolCallDelta {
                             index: tc.get("index")?.as_u64()? as u32,
                             id: tc.get("id").and_then(|v| v.as_str()).map(String::from),
-                            name: tc.get("function")?.get("name").and_then(|v| v.as_str()).map(String::from),
-                            arguments: tc.get("function")?.get("arguments").and_then(|v| v.as_str()).map(String::from),
+                            name: tc
+                                .get("function")?
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                            arguments: tc
+                                .get("function")?
+                                .get("arguments")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
                         })
                     })
                     .collect()
             }),
-            delta_thinking: delta.and_then(|d| d["reasoning_content"].as_str()).map(String::from),
-            finish_reason: choice.and_then(|c| c["finish_reason"].as_str()).map(String::from),
+            delta_thinking: delta
+                .and_then(|d| d["reasoning_content"].as_str())
+                .map(String::from),
+            finish_reason: choice
+                .and_then(|c| c["finish_reason"].as_str())
+                .map(String::from),
             usage: chunk.get("usage").map(|u| IrUsage {
                 prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
                 completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
                 total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
-                cached_tokens: u.get("prompt_tokens_details")
+                cached_tokens: u
+                    .get("prompt_tokens_details")
                     .and_then(|d| d["cached_tokens"].as_u64())
                     .unwrap_or(0) as u32,
                 cache_creation_input_tokens: 0,
@@ -292,27 +350,44 @@ impl FormatParser for CompletionsParser {
         let msg = &choice["message"];
 
         let tool_calls = msg.get("tool_calls").and_then(|tc| {
-            let calls: Vec<IrToolCall> = tc.as_array()?.iter().filter_map(|tc| {
-                let func = tc.get("function")?;
-                Some(IrToolCall {
-                    id: tc.get("id")?.as_str()?.to_string(),
-                    name: func.get("name")?.as_str()?.to_string(),
-                    arguments: func.get("arguments")?.as_str()?.to_string(),
+            let calls: Vec<IrToolCall> = tc
+                .as_array()?
+                .iter()
+                .filter_map(|tc| {
+                    let func = tc.get("function")?;
+                    Some(IrToolCall {
+                        id: tc.get("id")?.as_str()?.to_string(),
+                        name: func.get("name")?.as_str()?.to_string(),
+                        arguments: func.get("arguments")?.as_str()?.to_string(),
+                    })
                 })
-            }).collect();
-            if calls.is_empty() { None } else { Some(calls) }
+                .collect();
+            if calls.is_empty() {
+                None
+            } else {
+                Some(calls)
+            }
         });
 
         let mut content = if msg["content"].is_string() {
             let text = msg["content"].as_str().unwrap_or("").to_string();
-            if text.is_empty() { vec![] } else {
-                vec![IrContentPart::Text { text, citations: None }]
+            if text.is_empty() {
+                vec![]
+            } else {
+                vec![IrContentPart::Text {
+                    text,
+                    citations: None,
+                }]
             }
         } else if let Some(arr) = msg["content"].as_array() {
             arr.iter()
                 .filter_map(|p| match p["type"].as_str() {
                     Some("text") => Some(IrContentPart::Text {
-                        text: p.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        text: p
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         citations: None,
                     }),
                     Some("refusal") => None,
@@ -325,7 +400,13 @@ impl FormatParser for CompletionsParser {
 
         if let Some(reasoning) = msg.get("reasoning_content").and_then(|v| v.as_str()) {
             if !reasoning.is_empty() {
-                content.insert(0, IrContentPart::Thinking { text: reasoning.to_string(), signature: None });
+                content.insert(
+                    0,
+                    IrContentPart::Thinking {
+                        text: reasoning.to_string(),
+                        signature: None,
+                    },
+                );
             }
         }
 
@@ -341,16 +422,27 @@ impl FormatParser for CompletionsParser {
             },
             finish_reason: choice["finish_reason"].as_str().map(String::from),
             stop_sequence: None,
-            usage: body.get("usage").map(|u| IrUsage {
-                prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
-                completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
-                total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
-                cached_tokens: u.get("prompt_tokens_details")
-                    .and_then(|d| d["cached_tokens"].as_u64())
-                    .unwrap_or(0) as u32,
-                cache_creation_input_tokens: 0,
-                thinking_tokens: 0,
-            }).unwrap_or(IrUsage { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, cached_tokens: 0, cache_creation_input_tokens: 0, thinking_tokens: 0 }),
+            usage: body
+                .get("usage")
+                .map(|u| IrUsage {
+                    prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0) as u32,
+                    completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0) as u32,
+                    total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
+                    cached_tokens: u
+                        .get("prompt_tokens_details")
+                        .and_then(|d| d["cached_tokens"].as_u64())
+                        .unwrap_or(0) as u32,
+                    cache_creation_input_tokens: 0,
+                    thinking_tokens: 0,
+                })
+                .unwrap_or(IrUsage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                    cached_tokens: 0,
+                    cache_creation_input_tokens: 0,
+                    thinking_tokens: 0,
+                }),
         })
     }
 }

@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::converter::ir::{
-    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage, IrThinkingConfig,
+    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrThinkingConfig,
+    IrTool, IrToolCall, IrToolCallDelta, IrUsage,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -45,7 +45,10 @@ impl FormatParser for AnthropicParser {
                     role: IrRole::System,
                     content: system_texts
                         .into_iter()
-                        .map(|text| IrContentPart::Text { text, citations: None })
+                        .map(|text| IrContentPart::Text {
+                            text,
+                            citations: None,
+                        })
                         .collect(),
                     name: None,
                     tool_call_id: None,
@@ -98,7 +101,10 @@ impl FormatParser for AnthropicParser {
             let enabled = t["type"].as_str() == Some("enabled");
             Some(IrThinkingConfig {
                 enabled,
-                budget_tokens: t.get("budget_tokens").and_then(|v| v.as_u64()).map(|v| v as u32),
+                budget_tokens: t
+                    .get("budget_tokens")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32),
             })
         });
 
@@ -246,17 +252,21 @@ impl FormatParser for AnthropicParser {
                 let stop_reason = delta["stop_reason"].as_str().map(String::from);
 
                 let usage = event.get("usage").map(|u| {
-                    let output = u["output_tokens"].as_u64()
+                    let output = u["output_tokens"]
+                        .as_u64()
                         .or_else(|| u["completion_tokens"].as_u64())
                         .unwrap_or(0);
-                    let input = u["input_tokens"].as_u64()
+                    let input = u["input_tokens"]
+                        .as_u64()
                         .or_else(|| u["prompt_tokens"].as_u64())
                         .unwrap_or(0);
-                    let cached = u["cache_read_input_tokens"].as_u64()
+                    let cached = u["cache_read_input_tokens"]
+                        .as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
                     let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
-                    let thinking = u.get("output_tokens_details")
+                    let thinking = u
+                        .get("output_tokens_details")
                         .and_then(|d| d["thinking_tokens"].as_u64())
                         .unwrap_or(0);
                     IrUsage {
@@ -286,10 +296,12 @@ impl FormatParser for AnthropicParser {
                 let model = message["model"].as_str().map(String::from);
 
                 let usage = message.get("usage").map(|u| {
-                    let input = u["input_tokens"].as_u64()
+                    let input = u["input_tokens"]
+                        .as_u64()
                         .or_else(|| u["prompt_tokens"].as_u64())
                         .unwrap_or(0);
-                    let cached = u["cache_read_input_tokens"].as_u64()
+                    let cached = u["cache_read_input_tokens"]
+                        .as_u64()
                         .or_else(|| u["cached_tokens"].as_u64())
                         .unwrap_or(0);
                     let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
@@ -326,8 +338,14 @@ impl FormatParser for AnthropicParser {
             })),
             "error" => {
                 let error_data = &event["error"];
-                let error_type = error_data["type"].as_str().unwrap_or("api_error").to_string();
-                let error_msg = error_data["message"].as_str().unwrap_or("upstream error").to_string();
+                let error_type = error_data["type"]
+                    .as_str()
+                    .unwrap_or("api_error")
+                    .to_string();
+                let error_msg = error_data["message"]
+                    .as_str()
+                    .unwrap_or("upstream error")
+                    .to_string();
 
                 Ok(Some(IrStreamChunk {
                     id: None,
@@ -366,9 +384,8 @@ impl FormatParser for AnthropicParser {
                 match block_type {
                     "text" => {
                         if let Some(text) = block["text"].as_str() {
-                            let citations = block.get("citations")
-                                .filter(|c| c.is_array())
-                                .cloned();
+                            let citations =
+                                block.get("citations").filter(|c| c.is_array()).cloned();
                             content_parts.push(IrContentPart::Text {
                                 text: text.to_string(),
                                 citations,
@@ -426,17 +443,21 @@ impl FormatParser for AnthropicParser {
         let usage = body
             .get("usage")
             .map(|u| {
-                let input = u["input_tokens"].as_u64()
+                let input = u["input_tokens"]
+                    .as_u64()
                     .or_else(|| u["prompt_tokens"].as_u64())
                     .unwrap_or(0);
-                let output = u["output_tokens"].as_u64()
+                let output = u["output_tokens"]
+                    .as_u64()
                     .or_else(|| u["completion_tokens"].as_u64())
                     .unwrap_or(0);
-                let cached = u["cache_read_input_tokens"].as_u64()
+                let cached = u["cache_read_input_tokens"]
+                    .as_u64()
                     .or_else(|| u["cached_tokens"].as_u64())
                     .unwrap_or(0);
                 let cache_creation = u["cache_creation_input_tokens"].as_u64().unwrap_or(0);
-                let thinking = u.get("output_tokens_details")
+                let thinking = u
+                    .get("output_tokens_details")
                     .and_then(|d| d["thinking_tokens"].as_u64())
                     .unwrap_or(0);
                 IrUsage {
@@ -491,14 +512,20 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
         if let Some(content) = msg.get("content") {
             if let Some(text) = content.as_str() {
                 if !text.is_empty() {
-                    content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                    content_parts.push(IrContentPart::Text {
+                        text: text.to_string(),
+                        citations: None,
+                    });
                 }
             } else if let Some(arr) = content.as_array() {
                 for part in arr {
                     let part_type = part["type"].as_str().unwrap_or("text");
                     if part_type == "text" {
                         if let Some(text) = part["text"].as_str() {
-                            content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                            content_parts.push(IrContentPart::Text {
+                                text: text.to_string(),
+                                citations: None,
+                            });
                         }
                     }
                 }
@@ -521,7 +548,10 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
         if let Some(content) = msg.get("content") {
             if let Some(text) = content.as_str() {
                 if !text.is_empty() {
-                    content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                    content_parts.push(IrContentPart::Text {
+                        text: text.to_string(),
+                        citations: None,
+                    });
                 }
             } else if let Some(arr) = content.as_array() {
                 for part in arr {
@@ -529,13 +559,19 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
                     match part_type {
                         "text" => {
                             if let Some(text) = part["text"].as_str() {
-                                content_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                                content_parts.push(IrContentPart::Text {
+                                    text: text.to_string(),
+                                    citations: None,
+                                });
                             }
                         }
                         "thinking" => {
                             if let Some(text) = part["thinking"].as_str() {
                                 let signature = part["signature"].as_str().map(String::from);
-                                content_parts.push(IrContentPart::Thinking { text: text.to_string(), signature });
+                                content_parts.push(IrContentPart::Thinking {
+                                    text: text.to_string(),
+                                    signature,
+                                });
                             }
                         }
                         "tool_use" => {
@@ -559,7 +595,11 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
             content: content_parts,
             name: None,
             tool_call_id: None,
-            tool_calls: if tool_calls.is_empty() { None } else { Some(tool_calls) },
+            tool_calls: if tool_calls.is_empty() {
+                None
+            } else {
+                Some(tool_calls)
+            },
         }]);
     }
 
@@ -570,7 +610,10 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
     if let Some(content) = msg.get("content") {
         if let Some(text) = content.as_str() {
             if !text.is_empty() {
-                pending_user_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                pending_user_parts.push(IrContentPart::Text {
+                    text: text.to_string(),
+                    citations: None,
+                });
             }
         } else if let Some(arr) = content.as_array() {
             for part in arr {
@@ -589,15 +632,13 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
                             });
                         }
 
-                        let tool_use_id = part["tool_use_id"]
-                            .as_str()
-                            .unwrap_or("")
-                            .to_string();
+                        let tool_use_id = part["tool_use_id"].as_str().unwrap_or("").to_string();
 
                         let result_content = if let Some(text) = part["content"].as_str() {
                             text.to_string()
                         } else if let Some(c_arr) = part["content"].as_array() {
-                            c_arr.iter()
+                            c_arr
+                                .iter()
                                 .filter_map(|p| {
                                     if p["type"].as_str() == Some("text") {
                                         p["text"].as_str().map(String::from)
@@ -613,7 +654,10 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
 
                         results.push(IrMessage {
                             role: IrRole::Tool,
-                            content: vec![IrContentPart::Text { text: result_content, citations: None }],
+                            content: vec![IrContentPart::Text {
+                                text: result_content,
+                                citations: None,
+                            }],
                             name: None,
                             tool_call_id: Some(tool_use_id),
                             tool_calls: None,
@@ -621,7 +665,10 @@ fn parse_anthropic_message(msg: &Value) -> Result<Vec<IrMessage>, ProxyError> {
                     }
                     "text" => {
                         if let Some(text) = part["text"].as_str() {
-                            pending_user_parts.push(IrContentPart::Text { text: text.to_string(), citations: None });
+                            pending_user_parts.push(IrContentPart::Text {
+                                text: text.to_string(),
+                                citations: None,
+                            });
                         }
                     }
                     "image" => {

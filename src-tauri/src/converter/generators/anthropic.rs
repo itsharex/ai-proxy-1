@@ -44,7 +44,8 @@ impl FormatGenerator for AnthropicGenerator {
 
                     // Filter out ToolUse from content — handled via msg.tool_calls below
                     let content_for_conv: Vec<IrContentPart> = if msg.role == IrRole::Assistant {
-                        msg.content.iter()
+                        msg.content
+                            .iter()
                             .filter(|p| !matches!(p, IrContentPart::ToolUse { .. }))
                             .cloned()
                             .collect()
@@ -68,10 +69,14 @@ impl FormatGenerator for AnthropicGenerator {
                                 }
                             };
                             for tc in tool_calls {
-                                let input: Value = serde_json::from_str(&tc.arguments).unwrap_or_else(|e| {
-                                    tracing::warn!("Failed to parse tool_call arguments as JSON: {}", e);
-                                    Value::Object(serde_json::Map::new())
-                                });
+                                let input: Value = serde_json::from_str(&tc.arguments)
+                                    .unwrap_or_else(|e| {
+                                        tracing::warn!(
+                                            "Failed to parse tool_call arguments as JSON: {}",
+                                            e
+                                        );
+                                        Value::Object(serde_json::Map::new())
+                                    });
                                 content_arr.push(json!({
                                     "type": "tool_use",
                                     "id": tc.id,
@@ -146,7 +151,8 @@ impl FormatGenerator for AnthropicGenerator {
                     if let Some(t) = map.get("type").and_then(|v| v.as_str()) {
                         match t {
                             "function" => {
-                                if let Some(name) = map.get("function")
+                                if let Some(name) = map
+                                    .get("function")
                                     .and_then(|f| f.get("name"))
                                     .and_then(|n| n.as_str())
                                 {
@@ -193,7 +199,9 @@ impl FormatGenerator for AnthropicGenerator {
                 if current_max <= budget {
                     tracing::warn!(
                         "max_tokens ({}) <= budget_tokens ({}), adjusting to {}",
-                        current_max, budget, budget + 4096
+                        current_max,
+                        budget,
+                        budget + 4096
                     );
                     body["max_tokens"] = json!(budget + 4096);
                 }
@@ -207,7 +215,14 @@ impl FormatGenerator for AnthropicGenerator {
         Ok(body)
     }
 
-    fn generate_stream_start(&self, response_id: &str, model: &str, input_tokens: u32, output_tokens: u32, cached_tokens: u32) -> Option<String> {
+    fn generate_stream_start(
+        &self,
+        response_id: &str,
+        model: &str,
+        input_tokens: u32,
+        output_tokens: u32,
+        cached_tokens: u32,
+    ) -> Option<String> {
         let mut usage = json!({
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -239,9 +254,15 @@ impl FormatGenerator for AnthropicGenerator {
                 r => r,
             };
 
-            let usage = chunk.usage.as_ref().map(|u| json!({
-                "output_tokens": u.completion_tokens,
-            })).unwrap_or(json!({ "output_tokens": 0 }));
+            let usage = chunk
+                .usage
+                .as_ref()
+                .map(|u| {
+                    json!({
+                        "output_tokens": u.completion_tokens,
+                    })
+                })
+                .unwrap_or(json!({ "output_tokens": 0 }));
 
             let message_delta = json!({
                 "type": "message_delta",
@@ -357,7 +378,12 @@ impl FormatGenerator for AnthropicGenerator {
                         "input": input,
                     }));
                 }
-                IrContentPart::ToolResult { tool_use_id, content: result_content, id, .. } => {
+                IrContentPart::ToolResult {
+                    tool_use_id,
+                    content: result_content,
+                    id,
+                    ..
+                } => {
                     let mut block = json!({
                         "type": "tool_result",
                         "tool_use_id": tool_use_id,
@@ -382,7 +408,8 @@ impl FormatGenerator for AnthropicGenerator {
         // Add tool_calls as tool_use content blocks
         if let Some(tool_calls) = &ir.message.tool_calls {
             for tc in tool_calls {
-                let input: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Object(serde_json::Map::new()));
+                let input: Value = serde_json::from_str(&tc.arguments)
+                    .unwrap_or(Value::Object(serde_json::Map::new()));
                 content.push(json!({
                     "type": "tool_use",
                     "id": tc.id,
@@ -443,18 +470,22 @@ fn ensure_tool_results(messages: Vec<Value>) -> Vec<Value> {
         let role = msg["role"].as_str().unwrap_or("");
         if role == "assistant" {
             if let Some(content) = msg["content"].as_array() {
-                let tool_use_ids: Vec<String> = content.iter()
+                let tool_use_ids: Vec<String> = content
+                    .iter()
                     .filter(|b| b["type"].as_str() == Some("tool_use"))
                     .filter_map(|b| b["id"].as_str().map(String::from))
                     .collect();
 
                 if !tool_use_ids.is_empty() {
                     // Collect tool_result ids from the next message(s) that are user/tool results
-                    let mut answered_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+                    let mut answered_ids: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
                     let mut peek = i + 1;
                     while peek < messages.len() {
                         let next_role = messages[peek]["role"].as_str().unwrap_or("");
-                        if next_role != "user" { break; }
+                        if next_role != "user" {
+                            break;
+                        }
                         if let Some(arr) = messages[peek]["content"].as_array() {
                             for block in arr {
                                 if block["type"].as_str() == Some("tool_result") {
@@ -465,15 +496,22 @@ fn ensure_tool_results(messages: Vec<Value>) -> Vec<Value> {
                             }
                         }
                         // Only peek at consecutive user messages that contain tool_results
-                        let has_tool_result = messages[peek]["content"].as_array()
-                            .map(|arr| arr.iter().any(|b| b["type"].as_str() == Some("tool_result")))
+                        let has_tool_result = messages[peek]["content"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter()
+                                    .any(|b| b["type"].as_str() == Some("tool_result"))
+                            })
                             .unwrap_or(false);
-                        if !has_tool_result { break; }
+                        if !has_tool_result {
+                            break;
+                        }
                         peek += 1;
                     }
 
                     // Find orphaned tool_use ids
-                    let orphaned: Vec<&String> = tool_use_ids.iter()
+                    let orphaned: Vec<&String> = tool_use_ids
+                        .iter()
                         .filter(|id| !answered_ids.contains(*id))
                         .collect();
 
@@ -483,13 +521,16 @@ fn ensure_tool_results(messages: Vec<Value>) -> Vec<Value> {
                             orphaned.len(),
                             orphaned
                         );
-                        let tool_results: Vec<Value> = orphaned.iter().map(|id| {
-                            json!({
-                                "type": "tool_result",
-                                "tool_use_id": id,
-                                "content": "",
+                        let tool_results: Vec<Value> = orphaned
+                            .iter()
+                            .map(|id| {
+                                json!({
+                                    "type": "tool_result",
+                                    "tool_use_id": id,
+                                    "content": "",
+                                })
                             })
-                        }).collect();
+                            .collect();
                         result.push(json!({
                             "role": "user",
                             "content": tool_results,
@@ -534,7 +575,11 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
                 "type": "text",
                 "text": text,
             }),
-            IrContentPart::Image { url, data, media_type } => {
+            IrContentPart::Image {
+                url,
+                data,
+                media_type,
+            } => {
                 let source = if let Some(image_url) = url {
                     json!({
                         "type": "url",
@@ -561,7 +606,12 @@ fn convert_anthropic_content(parts: &[IrContentPart], role: &IrRole) -> Value {
                 "name": name,
                 "input": input,
             }),
-            IrContentPart::ToolResult { tool_use_id, content, id, .. } => {
+            IrContentPart::ToolResult {
+                tool_use_id,
+                content,
+                id,
+                ..
+            } => {
                 let _ = role;
                 let mut block = json!({
                     "type": "tool_result",

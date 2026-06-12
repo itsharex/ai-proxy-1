@@ -52,7 +52,9 @@ pub fn opencode_config_path() -> PathBuf {
         }
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("C:\\"))
-            .join(".config").join("opencode").join("opencode.json")
+            .join(".config")
+            .join("opencode")
+            .join("opencode.json")
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -66,7 +68,6 @@ pub fn opencode_config_path() -> PathBuf {
         config_home.join("opencode").join("opencode.json")
     }
 }
-
 
 fn claude_desktop_profile_path() -> PathBuf {
     claude_desktop_3p_dir()
@@ -89,7 +90,13 @@ pub fn config_path_for(app_type: &AppType) -> PathBuf {
     }
 }
 
-pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, preserve_auth: bool, context_window: u64) -> Result<PathBuf, String> {
+pub async fn write_codex_config(
+    _model: &str,
+    proxy_base: &str,
+    api_key: &str,
+    preserve_auth: bool,
+    context_window: u64,
+) -> Result<PathBuf, String> {
     let path = codex_config_path();
     let mut config: HashMap<String, toml::Value> = if path.exists() {
         let content = tokio::fs::read_to_string(&path)
@@ -125,12 +132,21 @@ pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, p
 
     let provider_entry = toml::Value::Table({
         let mut table = toml::map::Map::new();
-        table.insert("base_url".into(), toml::Value::String(proxy_base.to_string()));
+        table.insert(
+            "base_url".into(),
+            toml::Value::String(proxy_base.to_string()),
+        );
         table.insert("name".into(), toml::Value::String("ai-proxy".to_string()));
         table.insert("requires_openai_auth".into(), toml::Value::Boolean(true));
-        table.insert("wire_api".into(), toml::Value::String("responses".to_string()));
+        table.insert(
+            "wire_api".into(),
+            toml::Value::String("responses".to_string()),
+        );
         if !api_key.is_empty() {
-            table.insert("experimental_bearer_token".into(), toml::Value::String(api_key.to_string()));
+            table.insert(
+                "experimental_bearer_token".into(),
+                toml::Value::String(api_key.to_string()),
+            );
         }
         table
     });
@@ -146,8 +162,8 @@ pub async fn write_codex_config(_model: &str, proxy_base: &str, api_key: &str, p
         }
     }
 
-    let content =
-        toml::to_string_pretty(&config).map_err(|e| format!("Failed to serialize config: {}", e))?;
+    let content = toml::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
@@ -343,7 +359,8 @@ pub async fn write_claude_desktop_config(
         .map_err(|e| format!("Failed to create Claude-3p directories: {}", e))?;
 
     // 1. Write the gateway profile
-    let inference_models = build_claude_desktop_inference_models(model, model_haiku, model_sonnet, model_opus);
+    let inference_models =
+        build_claude_desktop_inference_models(model, model_haiku, model_sonnet, model_opus);
     let profile = serde_json::json!({
         "disableDeploymentModeChooser": true,
         "inferenceGatewayApiKey": api_key,
@@ -386,13 +403,10 @@ pub async fn write_claude_desktop_config(
                 .map_or(false, |id| id == PROFILE_ID)
         });
         if !has_profile {
-            entries
-                .as_array_mut()
-                .unwrap()
-                .push(serde_json::json!({
-                    "id": PROFILE_ID,
-                    "name": "AiProxy"
-                }));
+            entries.as_array_mut().unwrap().push(serde_json::json!({
+                "id": PROFILE_ID,
+                "name": "AiProxy"
+            }));
         }
     }
 
@@ -412,10 +426,10 @@ pub async fn write_claude_desktop_config(
         serde_json::json!({})
     };
 
-    config
-        .as_object_mut()
-        .unwrap()
-        .insert("deploymentMode".to_string(), serde_json::Value::String("3p".to_string()));
+    config.as_object_mut().unwrap().insert(
+        "deploymentMode".to_string(),
+        serde_json::Value::String("3p".to_string()),
+    );
 
     let config_content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize claude_desktop_config.json: {}", e))?;
@@ -456,11 +470,20 @@ pub async fn write_opencode_config(
                 .entry("options")
                 .or_insert_with(|| serde_json::Value::Object(Default::default()));
             if let Some(opt_obj) = options.as_object_mut() {
-                opt_obj.insert("apiKey".to_string(), serde_json::Value::String(api_key.to_string()));
-                opt_obj.insert("baseURL".to_string(), serde_json::Value::String(proxy_base.to_string()));
+                opt_obj.insert(
+                    "apiKey".to_string(),
+                    serde_json::Value::String(api_key.to_string()),
+                );
+                opt_obj.insert(
+                    "baseURL".to_string(),
+                    serde_json::Value::String(proxy_base.to_string()),
+                );
             }
             if !eobj.contains_key("npm") {
-                eobj.insert("npm".to_string(), serde_json::Value::String("@ai-sdk/openai-compatible".to_string()));
+                eobj.insert(
+                    "npm".to_string(),
+                    serde_json::Value::String("@ai-sdk/openai-compatible".to_string()),
+                );
             }
             // Replace AiProxy models with current selection
             let mut models_map = serde_json::Map::new();
@@ -517,10 +540,26 @@ pub async fn write_config(
             write_codex_config(model, proxy_base, api_key, preserve_auth, context_window).await
         }
         AppType::ClaudeCli => {
-            write_claude_cli_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await
+            write_claude_cli_config(
+                model,
+                model_haiku,
+                model_sonnet,
+                model_opus,
+                proxy_base,
+                api_key,
+            )
+            .await
         }
         AppType::ClaudeDesktop => {
-            write_claude_desktop_config(model, model_haiku, model_sonnet, model_opus, proxy_base, api_key).await
+            write_claude_desktop_config(
+                model,
+                model_haiku,
+                model_sonnet,
+                model_opus,
+                proxy_base,
+                api_key,
+            )
+            .await
         }
         AppType::OpenCodeCli => {
             // For OpenCode, model param is unused; caller passes models via write_opencode_config directly
@@ -731,7 +770,10 @@ mod tests {
         let api_key = "sk-test-key-123";
 
         let inference_models = build_claude_desktop_inference_models(
-            model, Some("haiku-model"), Some("sonnet-model"), Some("opus-model"),
+            model,
+            Some("haiku-model"),
+            Some("sonnet-model"),
+            Some("opus-model"),
         );
         let profile = serde_json::json!({
             "disableDeploymentModeChooser": true,
@@ -760,9 +802,7 @@ mod tests {
 
     #[test]
     fn test_claude_desktop_inference_models_default_fallback() {
-        let models = build_claude_desktop_inference_models(
-            "gpt-4o", None, None, None,
-        );
+        let models = build_claude_desktop_inference_models("gpt-4o", None, None, None);
         assert_eq!(models.len(), 3);
 
         // Haiku — no labelOverride
@@ -806,13 +846,10 @@ mod tests {
                     .map_or(false, |id| id == profile_id)
             });
             if !has_profile {
-                entries
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
-                        "id": profile_id,
-                        "name": "AiProxy"
-                    }));
+                entries.as_array_mut().unwrap().push(serde_json::json!({
+                    "id": profile_id,
+                    "name": "AiProxy"
+                }));
             }
         }
 
@@ -847,13 +884,10 @@ mod tests {
                     .map_or(false, |id| id == profile_id)
             });
             if !has_profile {
-                entries
-                    .as_array_mut()
-                    .unwrap()
-                    .push(serde_json::json!({
-                        "id": profile_id,
-                        "name": "AiProxy"
-                    }));
+                entries.as_array_mut().unwrap().push(serde_json::json!({
+                    "id": profile_id,
+                    "name": "AiProxy"
+                }));
             }
         }
 
@@ -876,10 +910,10 @@ mod tests {
         let mut config: serde_json::Value =
             serde_json::from_str(initial).expect("Failed to parse initial JSON");
 
-        config
-            .as_object_mut()
-            .unwrap()
-            .insert("deploymentMode".to_string(), serde_json::Value::String("3p".to_string()));
+        config.as_object_mut().unwrap().insert(
+            "deploymentMode".to_string(),
+            serde_json::Value::String("3p".to_string()),
+        );
 
         let output = serde_json::to_string_pretty(&config).expect("Failed to serialize");
 

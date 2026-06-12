@@ -1,6 +1,6 @@
+use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use tauri::Emitter;
-use once_cell::sync::Lazy;
 
 use crate::update;
 
@@ -26,7 +26,11 @@ pub fn start_update_timer(app: tauri::AppHandle) {
 
     let handle = {
         let guard = crate::APP_RUNTIME.lock().unwrap();
-        guard.as_ref().expect("runtime not initialized").handle().clone()
+        guard
+            .as_ref()
+            .expect("runtime not initialized")
+            .handle()
+            .clone()
     };
 
     handle.spawn(async move {

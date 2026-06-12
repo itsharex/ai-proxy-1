@@ -1,37 +1,71 @@
-use axum::extract::{Path, Json};
+use axum::extract::{Json, Path};
 use std::collections::HashMap;
 
 use crate::apps::config;
 use crate::apps::launcher;
 use crate::apps::types::{AppConfig, AppType, DbAppConfig, LaunchRequest, SetPathRequest};
 use crate::db::get_pool;
-use crate::server::api::{ok, err_json, ApiError, ApiResponse};
+use crate::server::api::{err_json, ok, ApiError, ApiResponse};
 
 fn build_model_config(body: &LaunchRequest) -> Option<String> {
-    if body.model_haiku.is_none() && body.model_sonnet.is_none() && body.model_opus.is_none() && body.models.is_none() {
+    if body.model_haiku.is_none()
+        && body.model_sonnet.is_none()
+        && body.model_opus.is_none()
+        && body.models.is_none()
+    {
         return None;
     }
     let mut map = serde_json::Map::new();
-    if let Some(ref v) = body.model_haiku { map.insert("haiku".into(), serde_json::Value::String(v.clone())); }
-    if let Some(ref v) = body.model_sonnet { map.insert("sonnet".into(), serde_json::Value::String(v.clone())); }
-    if let Some(ref v) = body.model_opus { map.insert("opus".into(), serde_json::Value::String(v.clone())); }
+    if let Some(ref v) = body.model_haiku {
+        map.insert("haiku".into(), serde_json::Value::String(v.clone()));
+    }
+    if let Some(ref v) = body.model_sonnet {
+        map.insert("sonnet".into(), serde_json::Value::String(v.clone()));
+    }
+    if let Some(ref v) = body.model_opus {
+        map.insert("opus".into(), serde_json::Value::String(v.clone()));
+    }
     if let Some(ref v) = body.models {
-        let arr: Vec<serde_json::Value> = v.iter().map(|m| serde_json::Value::String(m.clone())).collect();
+        let arr: Vec<serde_json::Value> = v
+            .iter()
+            .map(|m| serde_json::Value::String(m.clone()))
+            .collect();
         map.insert("models".into(), serde_json::Value::Array(arr));
     }
     Some(serde_json::Value::Object(map).to_string())
 }
 
-fn parse_model_config(json: Option<&str>) -> (Option<String>, Option<String>, Option<String>, Option<Vec<String>>) {
-    json
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+fn parse_model_config(
+    json: Option<&str>,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<Vec<String>>,
+) {
+    json.and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .map(|v| {
             let obj = v.as_object();
-            let haiku = obj.and_then(|o| o.get("haiku")).and_then(|v| v.as_str()).map(|s| s.to_string());
-            let sonnet = obj.and_then(|o| o.get("sonnet")).and_then(|v| v.as_str()).map(|s| s.to_string());
-            let opus = obj.and_then(|o| o.get("opus")).and_then(|v| v.as_str()).map(|s| s.to_string());
-            let models = obj.and_then(|o| o.get("models")).and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+            let haiku = obj
+                .and_then(|o| o.get("haiku"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let sonnet = obj
+                .and_then(|o| o.get("sonnet"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let opus = obj
+                .and_then(|o| o.get("opus"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let models = obj
+                .and_then(|o| o.get("models"))
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect()
+                });
             (haiku, sonnet, opus, models)
         })
         .unwrap_or((None, None, None, None))
@@ -47,10 +81,8 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
     .await
     .unwrap_or_default();
 
-    let db_map: HashMap<String, DbAppConfig> = rows
-        .into_iter()
-        .map(|r| (r.app_type.clone(), r))
-        .collect();
+    let db_map: HashMap<String, DbAppConfig> =
+        rows.into_iter().map(|r| (r.app_type.clone(), r)).collect();
 
     let mut result: Vec<AppConfig> = Vec::new();
 
@@ -66,44 +98,53 @@ pub async fn list_apps() -> Json<ApiResponse<Vec<AppConfig>>> {
             .or(detected_path);
 
         let installed = install_path.is_some();
-        let config_path_str = config::config_path_for(&app_type).to_string_lossy().to_string();
-        let (model_haiku, model_sonnet, model_opus, opencode_models) = parse_model_config(
-            db_rec.as_ref().and_then(|r| r.model_config.as_deref())
-        );
+        let config_path_str = config::config_path_for(&app_type)
+            .to_string_lossy()
+            .to_string();
+        let (model_haiku, model_sonnet, model_opus, opencode_models) =
+            parse_model_config(db_rec.as_ref().and_then(|r| r.model_config.as_deref()));
 
         let app_config = AppConfig {
             app_type,
             installed,
             install_path,
             config_path: Some(config_path_str),
-            model: db_rec.map(|r| {
-                if r.model.is_empty() {
-                    None
-                } else {
-                    Some(r.model.clone())
-                }
-            }).unwrap_or(None),
-            proxy_url: db_rec.map(|r| {
-                if r.proxy_url.is_empty() {
-                    None
-                } else {
-                    Some(r.proxy_url.clone())
-                }
-            }).unwrap_or(None),
-            launched_at: db_rec.map(|r| {
-                if r.launched_at.is_empty() {
-                    None
-                } else {
-                    Some(r.launched_at.clone())
-                }
-            }).unwrap_or(None),
-            status: db_rec.map(|r| {
-                if r.status.is_empty() {
-                    None
-                } else {
-                    Some(r.status.clone())
-                }
-            }).unwrap_or(None),
+            model: db_rec
+                .map(|r| {
+                    if r.model.is_empty() {
+                        None
+                    } else {
+                        Some(r.model.clone())
+                    }
+                })
+                .unwrap_or(None),
+            proxy_url: db_rec
+                .map(|r| {
+                    if r.proxy_url.is_empty() {
+                        None
+                    } else {
+                        Some(r.proxy_url.clone())
+                    }
+                })
+                .unwrap_or(None),
+            launched_at: db_rec
+                .map(|r| {
+                    if r.launched_at.is_empty() {
+                        None
+                    } else {
+                        Some(r.launched_at.clone())
+                    }
+                })
+                .unwrap_or(None),
+            status: db_rec
+                .map(|r| {
+                    if r.status.is_empty() {
+                        None
+                    } else {
+                        Some(r.status.clone())
+                    }
+                })
+                .unwrap_or(None),
             model_haiku,
             model_sonnet,
             model_opus,
@@ -146,7 +187,12 @@ pub async fn launch_app(
         .filter(|p| !p.trim().is_empty())
         .map(|p| p.to_string())
         .or(detected_path)
-        .ok_or_else(|| err_json(format!("{} is not installed or path not detected", app_type.display_name())))?;
+        .ok_or_else(|| {
+            err_json(format!(
+                "{} is not installed or path not detected",
+                app_type.display_name()
+            ))
+        })?;
 
     // Get proxy base URL from settings
     let proxy_settings: Vec<(String, String)> = sqlx::query_as(
@@ -157,8 +203,14 @@ pub async fn launch_app(
     .map_err(|e| err_json(e.to_string()))?;
 
     let settings_map: HashMap<String, String> = proxy_settings.into_iter().collect();
-    let port = settings_map.get("http_port").cloned().unwrap_or_else(|| "7860".into());
-    let preserve_auth = settings_map.get("codex_preserve_auth").map(|v| v == "true").unwrap_or(false);
+    let port = settings_map
+        .get("http_port")
+        .cloned()
+        .unwrap_or_else(|| "7860".into());
+    let preserve_auth = settings_map
+        .get("codex_preserve_auth")
+        .map(|v| v == "true")
+        .unwrap_or(false);
     let proxy_base = format!("http://127.0.0.1:{}", port);
 
     let proxy_url = format!("{}{}", proxy_base, app_type.proxy_url_suffix());
@@ -183,10 +235,13 @@ pub async fn launch_app(
 
     // Resolve API key: all apps use the proxy auth key for authentication against the proxy.
     // The proxy then handles format conversion and upstream provider key rotation transparently.
-    let api_key = resolve_proxy_auth_key().await.map_err(|e| err_json(format!(
-        "{}: 代理认证密钥解析失败 - 请确认已在设置中配置 API Key ({})",
-        app_type.display_name(), e
-    )))?;
+    let api_key = resolve_proxy_auth_key().await.map_err(|e| {
+        err_json(format!(
+            "{}: 代理认证密钥解析失败 - 请确认已在设置中配置 API Key ({})",
+            app_type.display_name(),
+            e
+        ))
+    })?;
 
     let write_result = if app_type == AppType::OpenCodeCli {
         let models = body.models.as_deref().unwrap_or(&[]);
@@ -202,11 +257,11 @@ pub async fn launch_app(
             &api_key,
             preserve_auth,
             context_window,
-        ).await
+        )
+        .await
     };
 
-    if let Err(e) = write_result
-    {
+    if let Err(e) = write_result {
         // Save error status to DB
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO app_configs (app_type, model, proxy_url, launched_at, config_path, install_path, status, work_dir, model_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -226,7 +281,9 @@ pub async fn launch_app(
         return Err(err_json(format!("Failed to write config: {}", e)));
     }
 
-    let config_path = config::config_path_for(&app_type).to_string_lossy().to_string();
+    let config_path = config::config_path_for(&app_type)
+        .to_string_lossy()
+        .to_string();
 
     // Launch the app
     let work_dir = body.work_dir.as_deref();
@@ -303,13 +360,12 @@ pub async fn set_app_path(
 
     let pool = get_pool().await;
 
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM app_configs WHERE app_type = ?",
-    )
-    .bind(&app_type_str)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| err_json(e.to_string()))?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM app_configs WHERE app_type = ?")
+            .bind(&app_type_str)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| err_json(e.to_string()))?;
 
     if exists {
         sqlx::query("UPDATE app_configs SET install_path = ? WHERE app_type = ?")
@@ -370,12 +426,11 @@ async fn sync_codex_route_rule(model: &str) {
 
 async fn resolve_proxy_auth_key() -> Result<String, String> {
     let pool = get_pool().await;
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'proxy_auth_key'",
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("Failed to query proxy_auth_key: {}", e))?;
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT value FROM settings WHERE key = 'proxy_auth_key'")
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| format!("Failed to query proxy_auth_key: {}", e))?;
 
     row.and_then(|(v,)| if v.is_empty() { None } else { Some(v) })
         .ok_or_else(|| "proxy_auth_key not configured".to_string())
@@ -392,15 +447,30 @@ async fn sync_claude_desktop_route_rules(
     let pool = get_pool().await;
 
     let rules: Vec<(&str, &str, &str)> = vec![
-        ("auto_claude_haiku_route", "claude-haiku-4-5", model_haiku.unwrap_or(default_model)),
-        ("auto_claude_sonnet_route", "claude-sonnet-4-6", model_sonnet.unwrap_or(default_model)),
-        ("auto_claude_opus_route", "claude-opus-4-7", model_opus.unwrap_or(default_model)),
+        (
+            "auto_claude_haiku_route",
+            "claude-haiku-4-5",
+            model_haiku.unwrap_or(default_model),
+        ),
+        (
+            "auto_claude_sonnet_route",
+            "claude-sonnet-4-6",
+            model_sonnet.unwrap_or(default_model),
+        ),
+        (
+            "auto_claude_opus_route",
+            "claude-opus-4-7",
+            model_opus.unwrap_or(default_model),
+        ),
     ];
 
     for (rule_id, claude_model, target_model) in &rules {
         let condition_json = format!(r#"{{"type":"model_matches","pattern":"{}"}}"#, claude_model);
         let action_json = format!(r#"{{"type":"replace_model","model":"{}"}}"#, target_model);
-        let rule_name = format!("Claude Desktop {} 路由", claude_model.strip_prefix("claude-").unwrap_or(claude_model));
+        let rule_name = format!(
+            "Claude Desktop {} 路由",
+            claude_model.strip_prefix("claude-").unwrap_or(claude_model)
+        );
 
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO interceptor_rules (id, name, phase, rule_type, condition_json, action_json, priority, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -416,6 +486,10 @@ async fn sync_claude_desktop_route_rules(
         .execute(pool)
         .await;
 
-        tracing::info!("Synced Claude Desktop route rule: {} -> {}", claude_model, target_model);
+        tracing::info!(
+            "Synced Claude Desktop route rule: {} -> {}",
+            claude_model,
+            target_model
+        );
     }
 }

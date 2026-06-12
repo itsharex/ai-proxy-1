@@ -85,7 +85,10 @@ fn assert_request_roundtrip(parsed: &IrRequest, original: &IrRequest) {
     assert_eq!(parsed.model, original.model);
     assert_eq!(parsed.messages.len(), original.messages.len());
     for (p, o) in parsed.messages.iter().zip(original.messages.iter()) {
-        assert_eq!(std::mem::discriminant(&p.role), std::mem::discriminant(&o.role));
+        assert_eq!(
+            std::mem::discriminant(&p.role),
+            std::mem::discriminant(&o.role)
+        );
         assert_eq!(p.content.len(), o.content.len());
         for (pc, oc) in p.content.iter().zip(o.content.iter()) {
             match (pc, oc) {
@@ -234,7 +237,10 @@ fn completions_tool_calls_request() {
     let body = generator.generate_request(&ir).unwrap();
     let tools = body.get("tools").unwrap().as_array().unwrap();
     assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0]["function"]["name"].as_str().unwrap(), "get_weather");
+    assert_eq!(
+        tools[0]["function"]["name"].as_str().unwrap(),
+        "get_weather"
+    );
 
     let parser = CompletionsParser;
     let parsed = parser.parse_request(&body).unwrap();
@@ -260,7 +266,9 @@ fn responses_json_schema_is_downgraded_to_json_object_for_completions() {
     }));
 
     let body = generator.generate_request(&ir).unwrap();
-    let response_format = body.get("response_format").expect("response_format should exist");
+    let response_format = body
+        .get("response_format")
+        .expect("response_format should exist");
     assert_eq!(response_format, &json!({ "type": "json_object" }));
 }
 
@@ -278,7 +286,9 @@ fn completions_json_schema_is_downgraded_to_json_object() {
     }));
 
     let body = generator.generate_request(&ir).unwrap();
-    let response_format = body.get("response_format").expect("response_format should exist");
+    let response_format = body
+        .get("response_format")
+        .expect("response_format should exist");
 
     assert_eq!(response_format, &json!({ "type": "json_object" }));
 }
@@ -292,7 +302,9 @@ fn invalid_json_schema_response_format_is_downgraded() {
     }));
 
     let body = generator.generate_request(&ir).unwrap();
-    let response_format = body.get("response_format").expect("response_format should exist");
+    let response_format = body
+        .get("response_format")
+        .expect("response_format should exist");
     assert_eq!(response_format, &json!({ "type": "json_object" }));
 }
 

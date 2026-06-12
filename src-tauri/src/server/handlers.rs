@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 static REASONING_CACHE: std::sync::LazyLock<Mutex<HashMap<String, String>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-use axum::extract::{Request, Path};
+use axum::extract::{Path, Request};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::stream::StreamExt;
 use serde_json::Value;
-use tracing::{error, info, warn};
 use tokio::time::sleep;
+use tracing::{error, info, warn};
 
 use crate::converter::generators::anthropic::AnthropicGenerator;
 use crate::converter::generators::completions::CompletionsGenerator;
@@ -45,7 +45,6 @@ fn parse_retry_after_seconds(headers: &reqwest::header::HeaderMap) -> Option<u64
 }
 
 use crate::provider::manager::ProviderManager;
-
 
 pub async fn handle_completions(request: Request) -> Response {
     handle_proxy(request, ClientFormat::Completions, None, false).await
@@ -84,7 +83,10 @@ pub async fn handle_anthropic_count_tokens(request: Request) -> Response {
 
     let route = match ProviderManager::find_for_model(model).await {
         Ok(r) => {
-            info!("[count_tokens] Route: {} -> {} via {}", model, r.target_model, r.provider_name);
+            info!(
+                "[count_tokens] Route: {} -> {} via {}",
+                model, r.target_model, r.provider_name
+            );
             r
         }
         Err(e) => {
@@ -93,13 +95,14 @@ pub async fn handle_anthropic_count_tokens(request: Request) -> Response {
         }
     };
 
-    let selected_key = match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
-        Ok(k) => k,
-        Err(e) => {
-            error!("[count_tokens] Key rotation error: {}", e);
-            return e.into_response();
-        }
-    };
+    let selected_key =
+        match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
+            Ok(k) => k,
+            Err(e) => {
+                error!("[count_tokens] Key rotation error: {}", e);
+                return e.into_response();
+            }
+        };
 
     let nonce_slice: Vec<u8> = selected_key.nonce;
     let mut nonce_array = [0u8; 12];
@@ -123,7 +126,10 @@ pub async fn handle_anthropic_count_tokens(request: Request) -> Response {
         forward_body["model"] = Value::String(route.target_model.clone());
     }
 
-    let url = format!("{}/v1/messages/count_tokens", route.base_url.trim_end_matches('/'));
+    let url = format!(
+        "{}/v1/messages/count_tokens",
+        route.base_url.trim_end_matches('/')
+    );
     info!("[count_tokens] Upstream: POST {}", url);
 
     let http_client = crate::http::SHARED_HTTP_CLIENT.clone();
@@ -162,13 +168,18 @@ pub async fn handle_anthropic_count_tokens(request: Request) -> Response {
         }
     };
 
-    info!("[count_tokens] Completed in {}ms, status={}", start.elapsed().as_millis(), status);
+    info!(
+        "[count_tokens] Completed in {}ms, status={}",
+        start.elapsed().as_millis(),
+        status
+    );
 
     (
         status,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         resp_body.to_vec(),
-    ).into_response()
+    )
+        .into_response()
 }
 
 pub async fn handle_gemini(Path(model_segment): Path<String>, request: Request) -> Response {
@@ -178,11 +189,7 @@ pub async fn handle_gemini(Path(model_segment): Path<String>, request: Request) 
 
 fn parse_gemini_model_segment(segment: &str) -> (String, bool) {
     let is_stream = segment.contains("streamGenerateContent");
-    let model = segment
-        .split(':')
-        .next()
-        .unwrap_or(segment)
-        .to_string();
+    let model = segment.split(':').next().unwrap_or(segment).to_string();
     (model, is_stream)
 }
 
@@ -190,12 +197,17 @@ fn truncate_str(s: &str, max_len: usize) -> std::borrow::Cow<'_, str> {
     if s.len() <= max_len {
         std::borrow::Cow::Borrowed(s)
     } else {
-        let boundary = s.char_indices()
+        let boundary = s
+            .char_indices()
             .take_while(|(i, _)| *i < max_len)
             .last()
             .map(|(i, c)| i + c.len_utf8())
             .unwrap_or(max_len.min(s.len()));
-        std::borrow::Cow::Owned(format!("{}... (truncated, {} bytes total)", &s[..boundary], s.len()))
+        std::borrow::Cow::Owned(format!(
+            "{}... (truncated, {} bytes total)",
+            &s[..boundary],
+            s.len()
+        ))
     }
 }
 
@@ -223,10 +235,22 @@ async fn handle_proxy(
         Err(e) => {
             tracing::error!("[ERR] invalid request body: {}", e);
             if let Err(le) = log_request_entry(
-                &request_id, &client_format, "proxy", &client_format,
-                "unknown", false, 400, start.elapsed().as_millis() as i64,
-                Some(&format!("invalid JSON: {}", e)), 0, 0, 0, None,
-            ).await {
+                &request_id,
+                &client_format,
+                "proxy",
+                &client_format,
+                "unknown",
+                false,
+                400,
+                start.elapsed().as_millis() as i64,
+                Some(&format!("invalid JSON: {}", e)),
+                0,
+                0,
+                0,
+                None,
+            )
+            .await
+            {
                 tracing::error!("Early error logging failed: {}", le);
             }
             return ProxyError::Parse(format!("invalid JSON: {}", e)).into_response();
@@ -242,17 +266,28 @@ async fn handle_proxy(
     {
         let pool_ref = crate::db::pool::get_pool().await;
         let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT key, value FROM settings WHERE key = 'extract_system_from_messages'"
-        ).fetch_all(pool_ref).await.unwrap_or_default();
+            "SELECT key, value FROM settings WHERE key = 'extract_system_from_messages'",
+        )
+        .fetch_all(pool_ref)
+        .await
+        .unwrap_or_default();
         let map: HashMap<String, String> = rows.into_iter().collect();
-        let enabled = map.get("extract_system_from_messages").map(|v| v == "true").unwrap_or(true);
+        let enabled = map
+            .get("extract_system_from_messages")
+            .map(|v| v == "true")
+            .unwrap_or(true);
 
         if enabled {
-            if let Some(msgs) = body_value.get_mut("messages").and_then(|m| m.as_array_mut()) {
+            if let Some(msgs) = body_value
+                .get_mut("messages")
+                .and_then(|m| m.as_array_mut())
+            {
                 let mut extra_systems: Vec<String> = Vec::new();
                 let mut i = 0;
                 while i < msgs.len() {
-                    if msgs[i]["role"].as_str() == Some("system") || msgs[i]["role"].as_str() == Some("developer") {
+                    if msgs[i]["role"].as_str() == Some("system")
+                        || msgs[i]["role"].as_str() == Some("developer")
+                    {
                         let msg = msgs.remove(i);
                         let content = &msg["content"];
                         let text = if let Some(s) = content.as_str() {
@@ -313,14 +348,20 @@ async fn handle_proxy(
     {
         let model_hint = body_value["model"].as_str().unwrap_or("unknown");
         let stream = body_value["stream"].as_bool().unwrap_or(false);
-        info!("[REQ] {:?} model={} stream={}", client_format, model_hint, stream);
+        info!(
+            "[REQ] {:?} model={} stream={}",
+            client_format, model_hint, stream
+        );
     }
 
     if tracing::enabled!(tracing::Level::DEBUG) {
         if let Some(msgs) = body_value["messages"].as_array() {
             let has_tool = msgs.iter().any(|m| {
                 let role = m["role"].as_str().unwrap_or("");
-                role == "tool" || role == "function" || m.get("tool_calls").is_some() || m.get("function_call").is_some()
+                role == "tool"
+                    || role == "function"
+                    || m.get("tool_calls").is_some()
+                    || m.get("function_call").is_some()
             });
             if has_tool {
                 let serialized = serde_json::to_string(&body_value["messages"]).unwrap_or_default();
@@ -331,7 +372,10 @@ async fn handle_proxy(
 
     let mut ir_request = match parser.parse_request(&body_value) {
         Ok(r) => {
-            info!("Parsed request: model={}, stream={}, thinking={:?}", r.model, r.stream, r.thinking);
+            info!(
+                "Parsed request: model={}, stream={}, thinking={:?}",
+                r.model, r.stream, r.thinking
+            );
             r
         }
         Err(e) => {
@@ -339,10 +383,22 @@ async fn handle_proxy(
             tracing::error!("[ERR] parse failed model={}: {}", model_hint, e);
             error!("Parse request error: {}", e);
             if let Err(le) = log_request_entry(
-                &request_id, &client_format, "proxy", &client_format,
-                model_hint, false, 400, start.elapsed().as_millis() as i64,
-                Some(&format!("parse error: {}", e)), 0, 0, 0, None,
-            ).await {
+                &request_id,
+                &client_format,
+                "proxy",
+                &client_format,
+                model_hint,
+                false,
+                400,
+                start.elapsed().as_millis() as i64,
+                Some(&format!("parse error: {}", e)),
+                0,
+                0,
+                0,
+                None,
+            )
+            .await
+            {
                 tracing::error!("Early error logging failed: {}", le);
             }
             return e.into_response();
@@ -362,7 +418,9 @@ async fn handle_proxy(
     let path = parts.uri.path().to_string();
     let client_model = ir_request.model.clone();
 
-    if let Err(e) = InterceptorEngine::execute_pre_rules(&mut ir_request, &path, &mut extra_headers).await {
+    if let Err(e) =
+        InterceptorEngine::execute_pre_rules(&mut ir_request, &path, &mut extra_headers).await
+    {
         error!("Interceptor error: {}", e);
     }
 
@@ -374,13 +432,22 @@ async fn handle_proxy(
 
     let route = match ProviderManager::find_for_model(&ir_request.model).await {
         Ok(r) => {
-            info!("Route found: model={} -> {} ({:?} via {})", ir_request.model, r.target_model, r.target_format, r.provider_name);
-            info!("[ROUTE] {} -> {} ({})", ir_request.model, r.target_model, r.provider_name);
+            info!(
+                "Route found: model={} -> {} ({:?} via {})",
+                ir_request.model, r.target_model, r.target_format, r.provider_name
+            );
+            info!(
+                "[ROUTE] {} -> {} ({})",
+                ir_request.model, r.target_model, r.provider_name
+            );
             // Non-standard Anthropic endpoints (e.g. Kimi coding) don't support thinking parameter.
             // Clear it to avoid upstream errors and max_tokens inflation.
             if ir_request.thinking.is_some() {
                 if r.base_url.contains("kimi.com") || r.base_url.contains("moonshot.cn") {
-                    tracing::info!("Clearing thinking for non-standard Anthropic endpoint: {}", r.base_url);
+                    tracing::info!(
+                        "Clearing thinking for non-standard Anthropic endpoint: {}",
+                        r.base_url
+                    );
                     ir_request.thinking = None;
                 }
             }
@@ -390,30 +457,55 @@ async fn handle_proxy(
             tracing::error!("[ERR] no route for model={}: {}", ir_request.model, e);
             error!("Route not found for model '{}': {}", ir_request.model, e);
             if let Err(le) = log_request_entry(
-                &request_id, &client_format, "proxy", &client_format,
-                &log_model, ir_request.stream, 404, start.elapsed().as_millis() as i64,
-                Some(&format!("route not found: {}", e)), 0, 0, 0, None,
-            ).await {
+                &request_id,
+                &client_format,
+                "proxy",
+                &client_format,
+                &log_model,
+                ir_request.stream,
+                404,
+                start.elapsed().as_millis() as i64,
+                Some(&format!("route not found: {}", e)),
+                0,
+                0,
+                0,
+                None,
+            )
+            .await
+            {
                 tracing::error!("Early error logging failed: {}", le);
             }
             return e.into_response();
         }
     };
 
-    let selected_key = match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
-        Ok(k) => k,
-        Err(e) => {
-            let err_msg = format!("key rotation error: {}", e);
-            if let Err(le) = log_request_entry(
-                &request_id, &client_format, &route.provider_name, &route.target_format,
-                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
-                Some(&err_msg), 0, 0, 0, None,
-            ).await {
-                tracing::error!("Early error logging failed: {}", le);
+    let selected_key =
+        match KeyRotation::get_next_key(&route.provider_id, &RotationStrategy::LeastUsed).await {
+            Ok(k) => k,
+            Err(e) => {
+                let err_msg = format!("key rotation error: {}", e);
+                if let Err(le) = log_request_entry(
+                    &request_id,
+                    &client_format,
+                    &route.provider_name,
+                    &route.target_format,
+                    &log_model,
+                    ir_request.stream,
+                    500,
+                    start.elapsed().as_millis() as i64,
+                    Some(&err_msg),
+                    0,
+                    0,
+                    0,
+                    None,
+                )
+                .await
+                {
+                    tracing::error!("Early error logging failed: {}", le);
+                }
+                return e.into_response();
             }
-            return e.into_response();
-        }
-    };
+        };
 
     let nonce_slice: Vec<u8> = selected_key.nonce;
     let mut nonce_array = [0u8; 12];
@@ -421,10 +513,22 @@ async fn handle_proxy(
         nonce_array.copy_from_slice(&nonce_slice);
     } else {
         if let Err(le) = log_request_entry(
-            &request_id, &client_format, &route.provider_name, &route.target_format,
-            &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
-            Some("invalid nonce length"), 0, 0, 0, None,
-        ).await {
+            &request_id,
+            &client_format,
+            &route.provider_name,
+            &route.target_format,
+            &log_model,
+            ir_request.stream,
+            500,
+            start.elapsed().as_millis() as i64,
+            Some("invalid nonce length"),
+            0,
+            0,
+            0,
+            None,
+        )
+        .await
+        {
             tracing::error!("Early error logging failed: {}", le);
         }
         return ProxyError::KeyManagement("invalid nonce length".into()).into_response();
@@ -435,10 +539,22 @@ async fn handle_proxy(
         Err(e) => {
             let err_msg = format!("key decryption error: {}", e);
             if let Err(le) = log_request_entry(
-                &request_id, &client_format, &route.provider_name, &route.target_format,
-                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
-                Some(&err_msg), 0, 0, 0, None,
-            ).await {
+                &request_id,
+                &client_format,
+                &route.provider_name,
+                &route.target_format,
+                &log_model,
+                ir_request.stream,
+                500,
+                start.elapsed().as_millis() as i64,
+                Some(&err_msg),
+                0,
+                0,
+                0,
+                None,
+            )
+            .await
+            {
                 tracing::error!("Early error logging failed: {}", le);
             }
             return e.into_response();
@@ -476,10 +592,22 @@ async fn handle_proxy(
         Err(e) => {
             let err_msg = format!("request generation error: {}", e);
             if let Err(le) = log_request_entry(
-                &request_id, &client_format, &route.provider_name, &route.target_format,
-                &log_model, ir_request.stream, 500, start.elapsed().as_millis() as i64,
-                Some(&err_msg), 0, 0, 0, None,
-            ).await {
+                &request_id,
+                &client_format,
+                &route.provider_name,
+                &route.target_format,
+                &log_model,
+                ir_request.stream,
+                500,
+                start.elapsed().as_millis() as i64,
+                Some(&err_msg),
+                0,
+                0,
+                0,
+                None,
+            )
+            .await
+            {
                 tracing::error!("Early error logging failed: {}", le);
             }
             return e.into_response();
@@ -487,16 +615,25 @@ async fn handle_proxy(
     };
 
     if tracing::enabled!(tracing::Level::DEBUG) {
-        if ir_request_for_upstream.messages.iter().any(|m| m.role == IrRole::Tool) {
+        if ir_request_for_upstream
+            .messages
+            .iter()
+            .any(|m| m.role == IrRole::Tool)
+        {
             let serialized = serde_json::to_string(&target_body["messages"]).unwrap_or_default();
-            tracing::debug!("TOOL DEBUG messages for model={}: {}",
+            tracing::debug!(
+                "TOOL DEBUG messages for model={}: {}",
                 ir_request_for_upstream.model,
                 truncate_str(&serialized, 2000)
             );
         }
     }
 
-    let mut url = format!("{}{}", route.base_url.trim_end_matches('/'), route.endpoint_path);
+    let mut url = format!(
+        "{}{}",
+        route.base_url.trim_end_matches('/'),
+        route.endpoint_path
+    );
 
     if client_format == ClientFormat::Gemini && ir_request.stream {
         url = url.replace(":generateContent", ":streamGenerateContent");
@@ -506,11 +643,15 @@ async fn handle_proxy(
 
     let request_timeout_secs: u64 = {
         let pool_ref = crate::db::pool::get_pool().await;
-        let rows: Vec<(String, String)> = sqlx::query_as(
-            "SELECT key, value FROM settings WHERE key = 'request_timeout'"
-        ).fetch_all(pool_ref).await.unwrap_or_default();
+        let rows: Vec<(String, String)> =
+            sqlx::query_as("SELECT key, value FROM settings WHERE key = 'request_timeout'")
+                .fetch_all(pool_ref)
+                .await
+                .unwrap_or_default();
         let map: HashMap<String, String> = rows.into_iter().collect();
-        map.get("request_timeout").and_then(|v| v.parse().ok()).unwrap_or(1200)
+        map.get("request_timeout")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1200)
     };
 
     let http_client = crate::http::SHARED_HTTP_CLIENT.clone();
@@ -523,7 +664,11 @@ async fn handle_proxy(
     if ir_request.stream {
         req_builder = req_builder.timeout(std::time::Duration::from_secs(86400));
     } else {
-        let timeout_secs = if request_timeout_secs < 7200 { 7200 } else { request_timeout_secs };
+        let timeout_secs = if request_timeout_secs < 7200 {
+            7200
+        } else {
+            request_timeout_secs
+        };
         req_builder = req_builder.timeout(std::time::Duration::from_secs(timeout_secs));
     }
 
@@ -547,8 +692,15 @@ async fn handle_proxy(
             "SELECT key, value FROM settings WHERE key IN ('upstream_max_retries', 'upstream_retry_backoff_base_ms')"
         ).fetch_all(pool_ref).await.unwrap_or_default();
         let map: HashMap<String, String> = rows.into_iter().collect();
-        let total_attempts = map.get("upstream_max_retries").and_then(|v| v.parse::<u32>().ok()).unwrap_or(10).max(1);
-        let base_ms = map.get("upstream_retry_backoff_base_ms").and_then(|v| v.parse::<u64>().ok()).unwrap_or(500);
+        let total_attempts = map
+            .get("upstream_max_retries")
+            .and_then(|v| v.parse::<u32>().ok())
+            .unwrap_or(10)
+            .max(1);
+        let base_ms = map
+            .get("upstream_retry_backoff_base_ms")
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(500);
         (total_attempts, base_ms)
     };
 
@@ -565,7 +717,12 @@ async fn handle_proxy(
             Ok(r) => r,
             Err(e) => {
                 let err_msg = format!("request to provider failed: {}", e);
-                tracing::error!("[ERR] upstream network error model={} attempt={}: {}", target_model, attempt, e);
+                tracing::error!(
+                    "[ERR] upstream network error model={} attempt={}: {}",
+                    target_model,
+                    attempt,
+                    e
+                );
                 if attempt + 1 == retry_cfg_total_attempts {
                     let err = ProxyError::Network(err_msg.clone());
                     if let Err(le) = log_request_entry(
@@ -582,7 +739,9 @@ async fn handle_proxy(
                         0,
                         0,
                         None,
-                    ).await {
+                    )
+                    .await
+                    {
                         tracing::error!("Network error logging failed: {}", le);
                     }
                     return err.into_response();
@@ -594,15 +753,14 @@ async fn handle_proxy(
         };
 
         let status = current_resp.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
-            || status.is_server_error()
-        {
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
             let status_code = status.as_u16();
             let retry_after_secs = parse_retry_after_seconds(&current_resp.headers()).unwrap_or(0);
             let resp_body = match current_resp.bytes().await {
                 Ok(b) => b,
                 Err(e) => {
-                    return ProxyError::Network(format!("failed to read error response: {}", e)).into_response();
+                    return ProxyError::Network(format!("failed to read error response: {}", e))
+                        .into_response();
                 }
             };
             let body_text = String::from_utf8_lossy(&resp_body).into_owned();
@@ -642,7 +800,11 @@ async fn handle_proxy(
                 reqwest::StatusCode::BAD_GATEWAY,
                 "upstream request failed after retries".to_string(),
             ));
-            tracing::error!("[ERR] upstream status after retries={} model={}", status.as_u16(), target_model);
+            tracing::error!(
+                "[ERR] upstream status after retries={} model={}",
+                status.as_u16(),
+                target_model
+            );
             error!("Upstream error {}: {}", status.as_u16(), err_msg);
             if let Err(le) = log_request_entry(
                 &request_id,
@@ -658,7 +820,9 @@ async fn handle_proxy(
                 0,
                 0,
                 None,
-            ).await {
+            )
+            .await
+            {
                 tracing::error!("Upstream error logging failed: {}", le);
             }
 
@@ -683,11 +847,16 @@ async fn handle_proxy(
         let resp_body = match resp.bytes().await {
             Ok(b) => b,
             Err(e) => {
-                return ProxyError::Network(format!("failed to read error response: {}", e)).into_response();
+                return ProxyError::Network(format!("failed to read error response: {}", e))
+                    .into_response();
             }
         };
         let body_text = String::from_utf8_lossy(&resp_body).into_owned();
-        tracing::error!("[ERR] upstream status={} model={}", status_code, target_model);
+        tracing::error!(
+            "[ERR] upstream status={} model={}",
+            status_code,
+            target_model
+        );
         error!("Upstream error {}: {}", status_code, body_text);
 
         let err_msg = if body_text.trim_start().starts_with("<") {
@@ -731,18 +900,22 @@ async fn handle_proxy(
         let resp_body = match resp.bytes().await {
             Ok(b) => b,
             Err(e) => {
-                return ProxyError::Network(format!("failed to read response: {}", e)).into_response();
+                return ProxyError::Network(format!("failed to read response: {}", e))
+                    .into_response();
             }
         };
 
         if resp_body.is_empty() {
             tracing::error!("Upstream returned empty body with status {}", status);
-            return ProxyError::Parse("upstream returned empty response body".into()).into_response();
+            return ProxyError::Parse("upstream returned empty response body".into())
+                .into_response();
         }
 
         // Handle upstream returning SSE despite stream:false (e.g. provider bugs)
         let resp_body_str = String::from_utf8_lossy(&resp_body);
-        let resp_value: Value = if resp_body_str.starts_with("data:") || resp_body_str.starts_with("event:") {
+        let resp_value: Value = if resp_body_str.starts_with("data:")
+            || resp_body_str.starts_with("event:")
+        {
             // Upstream returned SSE — parse it as a streaming response and extract text
             tracing::warn!("Upstream returned SSE for non-streaming request, parsing as stream");
             let text = extract_text_from_sse_body(&resp_body_str, &route.target_format);
@@ -775,7 +948,8 @@ async fn handle_proxy(
                 Err(e) => {
                     let preview: String = resp_body_str.chars().take(200).collect();
                     tracing::error!("Invalid response JSON: {} | body preview: {}", e, preview);
-                    return ProxyError::Parse(format!("invalid response JSON: {}", e)).into_response();
+                    return ProxyError::Parse(format!("invalid response JSON: {}", e))
+                        .into_response();
                 }
             }
         };
@@ -801,7 +975,10 @@ async fn handle_proxy(
 
         // Cache reasoning_content for multi-turn (non-streaming path)
         if let Some(ref resp_id) = ir_response.id {
-            let reasoning: String = ir_response.message.content.iter()
+            let reasoning: String = ir_response
+                .message
+                .content
+                .iter()
                 .filter_map(|p| match p {
                     IrContentPart::Thinking { text, .. } => Some(text.as_str()),
                     _ => None,
@@ -835,8 +1012,13 @@ async fn handle_proxy(
             tracing::error!("Non-stream logging failed: {}", e);
         }
 
-        info!("[DONE] {} status=200 duration={}ms tokens={}/{}",
-            target_model, start.elapsed().as_millis(), prompt_tokens, completion_tokens);
+        info!(
+            "[DONE] {} status=200 duration={}ms tokens={}/{}",
+            target_model,
+            start.elapsed().as_millis(),
+            prompt_tokens,
+            completion_tokens
+        );
 
         let mut response = axum::Json(client_response).into_response();
         *response.status_mut() = status;
@@ -1965,7 +2147,9 @@ fn extract_text_from_sse_body(body: &str, format: &ClientFormat) -> Option<Strin
         if data == "[DONE]" || data.is_empty() {
             continue;
         }
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else { continue };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+            continue;
+        };
         match format {
             ClientFormat::Anthropic => {
                 if json.get("type").and_then(|v| v.as_str()) == Some("content_block_delta") {
@@ -1975,18 +2159,28 @@ fn extract_text_from_sse_body(body: &str, format: &ClientFormat) -> Option<Strin
                 }
             }
             ClientFormat::Completions | ClientFormat::Responses => {
-                if let Some(c) = json.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
+                if let Some(c) = json
+                    .pointer("/choices/0/delta/content")
+                    .and_then(|v| v.as_str())
+                {
                     parts.push(c.to_string());
                 }
             }
             ClientFormat::Gemini => {
-                if let Some(t) = json.pointer("/candidates/0/content/parts/0/text").and_then(|v| v.as_str()) {
+                if let Some(t) = json
+                    .pointer("/candidates/0/content/parts/0/text")
+                    .and_then(|v| v.as_str())
+                {
                     parts.push(t.to_string());
                 }
             }
         }
     }
-    if parts.is_empty() { None } else { Some(parts.join("")) }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(""))
+    }
 }
 
 fn get_generator(format: &ClientFormat) -> Box<dyn FormatGenerator> {
@@ -2092,7 +2286,9 @@ pub async fn handle_gemini_get_model(Path(model): Path<String>) -> Response {
             });
             axum::Json(body).into_response()
         }
-        None => ProxyError::ModelNotFound(format!("model '{}' not found", model_name)).into_response(),
+        None => {
+            ProxyError::ModelNotFound(format!("model '{}' not found", model_name)).into_response()
+        }
     }
 }
 
@@ -2120,14 +2316,14 @@ async fn query_model_routes() -> Result<Vec<ModelRouteInfo>, ProxyError> {
 
     Ok(rows
         .into_iter()
-        .map(|(model_name, provider_name, target_model, format)| {
-            ModelRouteInfo {
+        .map(
+            |(model_name, provider_name, target_model, format)| ModelRouteInfo {
                 model_name,
                 provider_name,
                 target_model,
                 format,
-            }
-        })
+            },
+        )
         .collect())
 }
 
@@ -2286,7 +2482,10 @@ impl Drop for StreamLoggingGuard {
             if interrupted {
                 tracing::warn!(
                     "[INTERRUPTED] {} duration={}ms tokens={}/{} - stream was interrupted",
-                    state.model, elapsed, pt, ct
+                    state.model,
+                    elapsed,
+                    pt,
+                    ct
                 );
             }
         });
@@ -2371,15 +2570,26 @@ fn inject_cached_reasoning_into_assistant_messages(
     // Only inject into the last assistant message that lacks thinking
     let last_assistant_idx = messages.iter().rposition(|m| {
         m.role == IrRole::Assistant
-            && !m.content.iter().any(|p| matches!(p, IrContentPart::Thinking { .. }))
+            && !m
+                .content
+                .iter()
+                .any(|p| matches!(p, IrContentPart::Thinking { .. }))
     });
 
-    let Some(idx) = last_assistant_idx else { return };
+    let Some(idx) = last_assistant_idx else {
+        return;
+    };
     let msg = &mut messages[idx];
 
     // Prefer exact match by previous_response_id
     if let Some(reasoning) = previous_response_id.and_then(|id| cache.get(id)) {
-        msg.content.insert(0, IrContentPart::Thinking { text: reasoning.clone(), signature: None });
+        msg.content.insert(
+            0,
+            IrContentPart::Thinking {
+                text: reasoning.clone(),
+                signature: None,
+            },
+        );
         return;
     }
 
@@ -2397,10 +2607,16 @@ fn inject_cached_reasoning_into_assistant_messages(
     let (thinking_opt, remaining) = split_thinking_tags(&text_content);
     if let Some(thinking) = thinking_opt {
         msg.content.clear();
-        msg.content.push(IrContentPart::Thinking { text: thinking, signature: None });
+        msg.content.push(IrContentPart::Thinking {
+            text: thinking,
+            signature: None,
+        });
         let trimmed = remaining.trim();
         if !trimmed.is_empty() {
-            msg.content.push(IrContentPart::Text { text: trimmed.to_string(), citations: None });
+            msg.content.push(IrContentPart::Text {
+                text: trimmed.to_string(),
+                citations: None,
+            });
         }
     }
 }
@@ -2420,7 +2636,14 @@ fn split_thinking_tags(text: &str) -> (Option<String>, String) {
             break;
         }
     }
-    (if thinking.is_empty() { None } else { Some(thinking) }, remaining)
+    (
+        if thinking.is_empty() {
+            None
+        } else {
+            Some(thinking)
+        },
+        remaining,
+    )
 }
 
 #[cfg(test)]

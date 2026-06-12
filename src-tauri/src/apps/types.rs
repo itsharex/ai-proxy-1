@@ -49,7 +49,10 @@ impl AppType {
     }
 
     pub fn is_cli(&self) -> bool {
-        matches!(self, AppType::CodexCli | AppType::ClaudeCli | AppType::OpenCodeCli)
+        matches!(
+            self,
+            AppType::CodexCli | AppType::ClaudeCli | AppType::OpenCodeCli
+        )
     }
 
     pub fn is_codex(&self) -> bool {

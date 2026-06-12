@@ -11,8 +11,8 @@ pub struct KeyStore {
 
 impl KeyStore {
     pub fn new(master_key: &[u8; 32]) -> Self {
-        let unbound_key = UnboundKey::new(&AES_256_GCM, master_key)
-            .expect("AES-256-GCM key creation failed");
+        let unbound_key =
+            UnboundKey::new(&AES_256_GCM, master_key).expect("AES-256-GCM key creation failed");
         Self {
             key: LessSafeKey::new(unbound_key),
         }
@@ -53,7 +53,7 @@ impl KeyStore {
         Ok(decrypted.to_vec())
     }
 
-pub fn derive_key() -> Result<[u8; 32], ProxyError> {
+    pub fn derive_key() -> Result<[u8; 32], ProxyError> {
         // Server mode: prefer environment variable
         #[cfg(feature = "server")]
         {
@@ -70,9 +70,7 @@ pub fn derive_key() -> Result<[u8; 32], ProxyError> {
         // Desktop mode (or server fallback): derive from hostname
         let hostname = hostname::get()
             .map_err(|_| ProxyError::KeyManagement("failed to get hostname".into()))?;
-        let hostname_str = hostname
-            .to_str()
-            .unwrap_or("default-ai-proxy-key");
+        let hostname_str = hostname.to_str().unwrap_or("default-ai-proxy-key");
 
         let hash = digest(&SHA256, hostname_str.as_bytes());
         let mut key = [0u8; 32];
@@ -91,5 +89,6 @@ pub fn decrypt_api_key(encrypted: &[u8], nonce: &[u8; NONCE_SIZE]) -> Result<Str
     let master = KeyStore::derive_key()?;
     let store = KeyStore::new(&master);
     let decrypted = store.decrypt(encrypted, nonce)?;
-    String::from_utf8(decrypted).map_err(|e| ProxyError::KeyManagement(format!("UTF-8 decode error: {}", e)))
+    String::from_utf8(decrypted)
+        .map_err(|e| ProxyError::KeyManagement(format!("UTF-8 decode error: {}", e)))
 }

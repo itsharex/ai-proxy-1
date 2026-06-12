@@ -1,5 +1,5 @@
-use sqlx::FromRow;
 use serde::Deserialize;
+use sqlx::FromRow;
 
 use crate::db::get_pool;
 use crate::error::ProxyError;

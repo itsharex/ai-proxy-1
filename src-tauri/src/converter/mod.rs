@@ -1,6 +1,6 @@
+pub mod generators;
 pub mod ir;
 pub mod parsers;
-pub mod generators;
 
 use crate::error::ProxyError;
 use ir::{IrRequest, IrResponse, IrStreamChunk};
@@ -16,7 +16,14 @@ pub trait FormatGenerator: Send + Sync {
     fn generate_stream_chunk(&self, chunk: &IrStreamChunk) -> String;
     fn generate_response(&self, ir: &IrResponse) -> Result<serde_json::Value, ProxyError>;
 
-    fn generate_stream_start(&self, _response_id: &str, _model: &str, _input_tokens: u32, _output_tokens: u32, _cached_tokens: u32) -> Option<String> {
+    fn generate_stream_start(
+        &self,
+        _response_id: &str,
+        _model: &str,
+        _input_tokens: u32,
+        _output_tokens: u32,
+        _cached_tokens: u32,
+    ) -> Option<String> {
         None
     }
 

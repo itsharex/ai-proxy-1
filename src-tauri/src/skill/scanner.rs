@@ -90,9 +90,17 @@ pub fn parse_skill_md(path: &Path) -> (String, String) {
             for line in frontmatter.lines() {
                 let line = line.trim();
                 if let Some(value) = line.strip_prefix("name:") {
-                    name = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                    name = value
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string();
                 } else if let Some(value) = line.strip_prefix("description:") {
-                    description = value.trim().trim_matches('"').trim_matches('\'').to_string();
+                    description = value
+                        .trim()
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .to_string();
                 }
             }
         }

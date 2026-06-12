@@ -10,8 +10,12 @@ pub async fn get_pool() -> &'static SqlitePool {
 
 pub async fn init_pool(path: &str) -> Result<(), sqlx::Error> {
     let pool = SqlitePool::connect(&format!("sqlite:{}?mode=rwc", path)).await?;
-    sqlx::query("PRAGMA journal_mode = WAL").execute(&pool).await?;
-    sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await?;
+    sqlx::query("PRAGMA journal_mode = WAL")
+        .execute(&pool)
+        .await?;
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&pool)
+        .await?;
     POOL.set(pool).expect("Database pool already initialized");
     info!("Database pool initialized");
     Ok(())

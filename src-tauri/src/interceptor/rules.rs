@@ -36,12 +36,26 @@ pub enum RuleCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RuleAction {
-    ReplaceModel { model: String },
-    SetHeader { name: String, value: String },
-    RemoveHeader { name: String },
-    InjectSystemPrompt { prompt: String },
-    OverrideParameter { parameter: String, value: serde_json::Value },
-    FilterResponse { patterns: Vec<String> },
+    ReplaceModel {
+        model: String,
+    },
+    SetHeader {
+        name: String,
+        value: String,
+    },
+    RemoveHeader {
+        name: String,
+    },
+    InjectSystemPrompt {
+        prompt: String,
+    },
+    OverrideParameter {
+        parameter: String,
+        value: serde_json::Value,
+    },
+    FilterResponse {
+        patterns: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

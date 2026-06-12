@@ -1,18 +1,21 @@
-use crate::server::handlers;
-use crate::server::api;
-use crate::server::middleware::auth_middleware;
 use crate::mcp;
+use crate::server::api;
+use crate::server::handlers;
+use crate::server::middleware::auth_middleware;
 use crate::skill;
-use axum::Router;
-use axum::routing::{post, get};
 use axum::middleware;
+use axum::routing::{get, post};
+use axum::Router;
 
 pub fn create_router() -> Router {
     let proxy_routes = Router::new()
         .route("/v1/chat/completions", post(handlers::handle_completions))
         .route("/v1/responses", post(handlers::handle_responses))
         .route("/v1/messages", post(handlers::handle_anthropic))
-        .route("/v1/messages/count_tokens", post(handlers::handle_anthropic_count_tokens))
+        .route(
+            "/v1/messages/count_tokens",
+            post(handlers::handle_anthropic_count_tokens),
+        )
         .route("/v1/models", get(handlers::handle_list_models))
         .route("/v1/models/:model", get(handlers::handle_get_model))
         .route("/v1beta/models", get(handlers::handle_gemini_list_models))

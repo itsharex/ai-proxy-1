@@ -1,5 +1,5 @@
-use axum::response::{IntoResponse, Response};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]

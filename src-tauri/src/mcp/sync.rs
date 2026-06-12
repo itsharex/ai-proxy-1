@@ -1,16 +1,18 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::Utc;
 
+use super::types::*;
+#[cfg(feature = "desktop")]
+use crate::apps::config::{
+    atomic_write, claude_desktop_config_path, codex_config_path, opencode_config_path,
+};
 #[cfg(feature = "desktop")]
 use crate::apps::types::AppType;
-#[cfg(feature = "desktop")]
-use crate::apps::config::{claude_desktop_config_path, codex_config_path, opencode_config_path, atomic_write};
 use crate::db::get_pool;
-use super::types::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct McpServerEntry {
@@ -67,13 +69,12 @@ pub async fn import_from_app(app_type: &AppType) -> Result<ImportResult, String>
     let mut skipped = 0u32;
 
     for (name, entry) in &mcp_entries {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM mcp_servers WHERE name = ?",
-        )
-        .bind(name)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(false);
+        let exists: bool =
+            sqlx::query_scalar("SELECT COUNT(*) > 0 FROM mcp_servers WHERE name = ?")
+                .bind(name)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(false);
 
         if exists {
             skipped += 1;
@@ -82,11 +83,17 @@ pub async fn import_from_app(app_type: &AppType) -> Result<ImportResult, String>
 
         let transport_type = entry.r#type.as_deref().unwrap_or("stdio").to_string();
         let id = Uuid::new_v4().to_string();
-        let args_json = entry.args.as_ref()
+        let args_json = entry
+            .args
+            .as_ref()
             .map(|a| serde_json::to_string(a).unwrap_or_default());
-        let env_json = entry.env.as_ref()
+        let env_json = entry
+            .env
+            .as_ref()
             .map(|e| serde_json::to_string(e).unwrap_or_default());
-        let headers_json = entry.headers.as_ref()
+        let headers_json = entry
+            .headers
+            .as_ref()
             .map(|h| serde_json::to_string(h).unwrap_or_default());
 
         sqlx::query(
@@ -122,10 +129,11 @@ pub async fn import_from_app(app_type: &AppType) -> Result<ImportResult, String>
 }
 
 fn parse_json_mcp_servers(content: &str) -> Result<Vec<(String, McpServerEntry)>, String> {
-    let config: serde_json::Value = serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let config: serde_json::Value =
+        serde_json::from_str(content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    let mcp_servers = config.get("mcpServers")
+    let mcp_servers = config
+        .get("mcpServers")
         .and_then(|v| v.as_object())
         .cloned()
         .unwrap_or_default();
@@ -140,19 +148,20 @@ fn parse_json_mcp_servers(content: &str) -> Result<Vec<(String, McpServerEntry)>
 }
 
 fn parse_toml_mcp_servers(content: &str) -> Result<Vec<(String, McpServerEntry)>, String> {
-    let config: toml::Value = toml::from_str(content)
-        .map_err(|e| format!("Failed to parse TOML: {}", e))?;
+    let config: toml::Value =
+        toml::from_str(content).map_err(|e| format!("Failed to parse TOML: {}", e))?;
 
-    let mcp_section = config.get("mcp_servers")
+    let mcp_section = config
+        .get("mcp_servers")
         .and_then(|v| v.as_table())
         .cloned()
         .unwrap_or_default();
 
     let mut entries = Vec::new();
     for (name, value) in &mcp_section {
-        let entry: McpServerEntry = serde_json::from_str(
-            &serde_json::to_string(value).unwrap_or_default()
-        ).map_err(|e| format!("Failed to parse MCP server '{}': {}", name, e))?;
+        let entry: McpServerEntry =
+            serde_json::from_str(&serde_json::to_string(value).unwrap_or_default())
+                .map_err(|e| format!("Failed to parse MCP server '{}': {}", name, e))?;
         entries.push((name.clone(), entry));
     }
     Ok(entries)
@@ -175,12 +184,10 @@ pub async fn apply_to_app(app_type: &AppType) -> Result<ApplyResult, String> {
     .map_err(|e| format!("Failed to query bindings: {}", e))?;
 
     // Get all DB server names for stale entry cleanup
-    let all_db_names: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM mcp_servers",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let all_db_names: Vec<String> = sqlx::query_scalar("SELECT name FROM mcp_servers")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
 
     if is_toml_config(app_type) {
         apply_toml(&path, &bindings, &all_db_names, pool).await
@@ -212,7 +219,10 @@ async fn apply_json(
         let mut entry = serde_json::Map::new();
 
         if server.transport_type != "stdio" {
-            entry.insert("type".into(), serde_json::Value::String(server.transport_type.clone()));
+            entry.insert(
+                "type".into(),
+                serde_json::Value::String(server.transport_type.clone()),
+            );
         }
 
         if let Some(cmd) = &server.command {
@@ -277,7 +287,9 @@ async fn apply_json(
 
     atomic_write(path, &content).await?;
 
-    Ok(ApplyResult { applied: bindings.len() as u32 })
+    Ok(ApplyResult {
+        applied: bindings.len() as u32,
+    })
 }
 
 #[cfg(feature = "desktop")]
@@ -324,7 +336,10 @@ async fn apply_toml(
 
         let transport = server.transport_type.as_str();
         if transport != "stdio" {
-            table.insert("type".into(), toml::Value::String(server.transport_type.clone()));
+            table.insert(
+                "type".into(),
+                toml::Value::String(server.transport_type.clone()),
+            );
         }
 
         if let Some(cmd) = &server.command {
@@ -332,8 +347,11 @@ async fn apply_toml(
         }
 
         if let Some(args_str) = &server.args {
-            if let Ok(serde_json::Value::Array(arr)) = serde_json::from_str::<serde_json::Value>(args_str) {
-                let toml_args: Vec<toml::Value> = arr.iter()
+            if let Ok(serde_json::Value::Array(arr)) =
+                serde_json::from_str::<serde_json::Value>(args_str)
+            {
+                let toml_args: Vec<toml::Value> = arr
+                    .iter()
                     .filter_map(|v| v.as_str().map(|s| toml::Value::String(s.to_string())))
                     .collect();
                 if !toml_args.is_empty() {
@@ -347,7 +365,9 @@ async fn apply_toml(
         }
 
         if let Some(headers_str) = &server.headers {
-            if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(headers_str) {
+            if let Ok(serde_json::Value::Object(map)) =
+                serde_json::from_str::<serde_json::Value>(headers_str)
+            {
                 let mut h_table = toml::map::Map::new();
                 for (k, v) in map {
                     if let Some(s) = v.as_str() {
@@ -361,7 +381,9 @@ async fn apply_toml(
         }
 
         if let Some(env_str) = &server.env {
-            if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(env_str) {
+            if let Ok(serde_json::Value::Object(map)) =
+                serde_json::from_str::<serde_json::Value>(env_str)
+            {
                 let mut e_table = toml::map::Map::new();
                 for (k, v) in map {
                     if let Some(s) = v.as_str() {
@@ -383,10 +405,12 @@ async fn apply_toml(
             .map_err(|e| format!("Failed to create config directory: {}", e))?;
     }
 
-    let content = toml::to_string_pretty(&config)
-        .map_err(|e| format!("Failed to serialize TOML: {}", e))?;
+    let content =
+        toml::to_string_pretty(&config).map_err(|e| format!("Failed to serialize TOML: {}", e))?;
 
     atomic_write(path, &content).await?;
 
-    Ok(ApplyResult { applied: bindings.len() as u32 })
+    Ok(ApplyResult {
+        applied: bindings.len() as u32,
+    })
 }

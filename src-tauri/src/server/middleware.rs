@@ -1,6 +1,8 @@
 use axum::body::Body;
-use axum::http::{HeaderValue, Method, Request, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::http::{HeaderValue, Method, Request};
+use axum::response::Response;
+#[cfg(feature = "server")]
+use axum::{http::StatusCode, response::IntoResponse};
 use tower_http::cors::CorsLayer;
 
 pub fn create_cors_layer(host: &str) -> CorsLayer {
@@ -31,58 +33,63 @@ pub fn create_cors_layer(host: &str) -> CorsLayer {
         .allow_headers(tower_http::cors::Any)
 }
 
-pub async fn auth_middleware(
-    req: Request<Body>,
-    next: axum::middleware::Next,
-) -> Response {
-    let pool = crate::db::get_pool().await;
-
-    let enabled: (String,) = match sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'proxy_auth_enabled'",
-    )
-    .fetch_one(pool)
-    .await
+pub async fn auth_middleware(req: Request<Body>, next: axum::middleware::Next) -> Response {
+    // Desktop mode: proxy routes live behind the local Tauri boundary,
+    // so API-key auth is not required here.
+    #[cfg(not(feature = "server"))]
     {
-        Ok(v) => v,
-        Err(_) => return next.run(req).await,
-    };
-
-    if enabled.0 != "true" {
         return next.run(req).await;
     }
 
-    let pool = crate::db::get_pool().await;
-    let expected_key: (String,) = match sqlx::query_as(
-        "SELECT value FROM settings WHERE key = 'proxy_auth_key'",
-    )
-    .fetch_one(pool)
-    .await
+    #[cfg(feature = "server")]
     {
-        Ok(v) => v,
-        Err(_) => return next.run(req).await,
-    };
+        let pool = crate::db::get_pool().await;
 
-    if expected_key.0.is_empty() {
-        return next.run(req).await;
-    }
+        let enabled: (String,) =
+            match sqlx::query_as("SELECT value FROM settings WHERE key = 'proxy_auth_enabled'")
+                .fetch_one(pool)
+                .await
+            {
+                Ok(v) => v,
+                Err(_) => return next.run(req).await,
+            };
 
-    let provided = req
-        .headers()
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .map(String::from)
-        .or_else(|| {
-            req.headers()
-                .get("x-api-key")
-                .and_then(|v| v.to_str().ok())
-                .map(String::from)
-        })
-        .unwrap_or_default();
+        if enabled.0 != "true" {
+            return next.run(req).await;
+        }
 
-    if provided == expected_key.0 {
-        next.run(req).await
-    } else {
-        (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+        let pool = crate::db::get_pool().await;
+        let expected_key: (String,) =
+            match sqlx::query_as("SELECT value FROM settings WHERE key = 'proxy_auth_key'")
+                .fetch_one(pool)
+                .await
+            {
+                Ok(v) => v,
+                Err(_) => return next.run(req).await,
+            };
+
+        if expected_key.0.is_empty() {
+            return next.run(req).await;
+        }
+
+        let provided = req
+            .headers()
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .map(String::from)
+            .or_else(|| {
+                req.headers()
+                    .get("x-api-key")
+                    .and_then(|v| v.to_str().ok())
+                    .map(String::from)
+            })
+            .unwrap_or_default();
+
+        if provided == expected_key.0 {
+            next.run(req).await
+        } else {
+            (StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+        }
     }
 }

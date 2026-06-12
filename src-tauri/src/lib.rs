@@ -1,16 +1,16 @@
 pub mod converter;
-pub mod http;
 pub mod db;
 pub mod error;
-pub mod provider;
-pub mod key;
-pub mod routing;
+pub mod http;
 pub mod interceptor;
-pub mod usage;
+pub mod key;
 pub mod logging;
-pub mod server;
 pub mod mcp;
+pub mod provider;
+pub mod routing;
+pub mod server;
 pub mod skill;
+pub mod usage;
 
 #[cfg(feature = "desktop")]
 pub mod apps;
@@ -31,17 +31,17 @@ pub fn get_log_layer() -> &'static BroadcastLayer {
 }
 
 #[cfg(feature = "desktop")]
-use tauri::Manager;
+use once_cell::sync::Lazy;
 #[cfg(feature = "desktop")]
-use tauri::Emitter;
+use std::sync::Mutex;
 #[cfg(feature = "desktop")]
 use tauri::menu::{Menu, MenuItem};
 #[cfg(feature = "desktop")]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 #[cfg(feature = "desktop")]
-use std::sync::Mutex;
+use tauri::Emitter;
 #[cfg(feature = "desktop")]
-use once_cell::sync::Lazy;
+use tauri::Manager;
 
 #[cfg(feature = "desktop")]
 const DEFAULT_PROXY_PORT: u16 = 7860;
@@ -76,7 +76,10 @@ async fn get_proxy_config() -> (String, u16) {
         .fetch_one(pool)
         .await
         .unwrap_or_else(|_| DEFAULT_PROXY_PORT.to_string());
-    (DEFAULT_PROXY_HOST.to_string(), port_str.parse().unwrap_or(DEFAULT_PROXY_PORT))
+    (
+        DEFAULT_PROXY_HOST.to_string(),
+        port_str.parse().unwrap_or(DEFAULT_PROXY_PORT),
+    )
 }
 
 #[cfg(feature = "desktop")]
@@ -119,9 +122,11 @@ async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     if app_data_dir.exists() {
-        std::fs::remove_dir_all(&app_data_dir).map_err(|e| format!("Failed to remove data: {}", e))?;
+        std::fs::remove_dir_all(&app_data_dir)
+            .map_err(|e| format!("Failed to remove data: {}", e))?;
     }
-    std::fs::create_dir_all(&app_data_dir).map_err(|e| format!("Failed to recreate data dir: {}", e))?;
+    std::fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to recreate data dir: {}", e))?;
 
     app.restart();
     #[allow(unreachable_code)]
@@ -132,7 +137,11 @@ async fn reset_all_data(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(feature = "desktop")]
 async fn set_window_theme(app: tauri::AppHandle, dark: bool) {
     if let Some(window) = app.get_webview_window("main") {
-        let theme = if dark { tauri::Theme::Dark } else { tauri::Theme::Light };
+        let theme = if dark {
+            tauri::Theme::Dark
+        } else {
+            tauri::Theme::Light
+        };
         let _ = window.set_theme(Some(theme));
     }
 }
@@ -150,7 +159,11 @@ fn start_proxy() -> (String, u16) {
 
     let handle = {
         let guard = APP_RUNTIME.lock().unwrap();
-        guard.as_ref().expect("runtime not initialized").handle().clone()
+        guard
+            .as_ref()
+            .expect("runtime not initialized")
+            .handle()
+            .clone()
     };
 
     let (tx, rx) = tokio::sync::watch::channel(false);
@@ -197,8 +210,8 @@ fn show_main_window(app: &tauri::AppHandle) {
 
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 fn set_dock_visibility(visible: bool) {
-    use objc2::runtime::{AnyClass, AnyObject};
     use objc2::msg_send;
+    use objc2::runtime::{AnyClass, AnyObject};
     use std::ffi::CStr;
 
     unsafe {
@@ -209,7 +222,8 @@ fn set_dock_visibility(visible: bool) {
         let _: () = msg_send![ns_app, setActivationPolicy: policy];
 
         if visible {
-            let _: () = msg_send![ns_app, setApplicationIconImage: std::ptr::null_mut::<AnyObject>()];
+            let _: () =
+                msg_send![ns_app, setApplicationIconImage: std::ptr::null_mut::<AnyObject>()];
             let _: () = msg_send![ns_app, activateIgnoringOtherApps: 1i8];
         }
     }
@@ -236,8 +250,15 @@ pub fn run() {
         use tracing_subscriber::prelude::*;
 
         tracing_subscriber::registry()
-            .with(tracing_subscriber::fmt::Layer::default().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
-            .with(get_log_layer().clone().with_filter(tracing_subscriber::filter::LevelFilter::INFO))
+            .with(
+                tracing_subscriber::fmt::Layer::default()
+                    .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
+            )
+            .with(
+                get_log_layer()
+                    .clone()
+                    .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
+            )
             .init();
 
         tauri::Builder::default()
@@ -249,7 +270,10 @@ pub fn run() {
             ))
             .plugin(tauri_plugin_window_state::Builder::new().build())
             .setup(|app| {
-                let base_data_dir = app.path().app_data_dir().expect("failed to get app data dir");
+                let base_data_dir = app
+                    .path()
+                    .app_data_dir()
+                    .expect("failed to get app data dir");
                 let app_data_dir = if cfg!(debug_assertions) {
                     base_data_dir.with_file_name("com.aiproxy.app-dev")
                 } else {
@@ -267,7 +291,8 @@ pub fn run() {
                 let db_path = app_data_dir.join("ai-proxy.db");
                 let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
                 rt.block_on(async {
-                    db::init::init_db(db_path.to_str().unwrap()).await
+                    db::init::init_db(db_path.to_str().unwrap())
+                        .await
                         .expect("failed to initialize database");
                 });
 
@@ -279,7 +304,13 @@ pub fn run() {
                 start_proxy();
                 update_timer::start_update_timer(app.handle().clone());
 
-                let check_update_item = MenuItem::with_id(app, "check-update", "Check for Updates", true, None::<&str>)?;
+                let check_update_item = MenuItem::with_id(
+                    app,
+                    "check-update",
+                    "Check for Updates",
+                    true,
+                    None::<&str>,
+                )?;
                 let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&check_update_item, &quit_item])?;
 
@@ -298,7 +329,11 @@ pub fn run() {
                             let app_handle = app.clone();
                             let handle = {
                                 let guard = APP_RUNTIME.lock().unwrap();
-                                guard.as_ref().expect("runtime not initialized").handle().clone()
+                                guard
+                                    .as_ref()
+                                    .expect("runtime not initialized")
+                                    .handle()
+                                    .clone()
                             };
                             handle.spawn(async move {
                                 match update::check_update(&app_handle).await {
@@ -332,7 +367,15 @@ pub fn run() {
 
                 Ok(())
             })
-            .invoke_handler(tauri::generate_handler![get_api_config, apply_proxy_config, reset_all_data, set_window_theme, update::check_for_update, update::download_update, update::open_update_file])
+            .invoke_handler(tauri::generate_handler![
+                get_api_config,
+                apply_proxy_config,
+                reset_all_data,
+                set_window_theme,
+                update::check_for_update,
+                update::download_update,
+                update::open_update_file
+            ])
             .on_window_event(|window, event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
@@ -365,16 +408,19 @@ mod tests {
     #[cfg(feature = "desktop")]
     #[test]
     fn ready_event_does_not_request_window_restore() {
-        assert!(!should_show_main_window_for_run_event(&tauri::RunEvent::Ready));
+        assert!(!should_show_main_window_for_run_event(
+            &tauri::RunEvent::Ready
+        ));
     }
 }
-
 
 // ===== 服务版入口辅助函数 =====
 
 #[cfg(feature = "server")]
 pub async fn init_database(db_path: &str) {
-    db::init::init_db(db_path).await.expect("failed to initialize database");
+    db::init::init_db(db_path)
+        .await
+        .expect("failed to initialize database");
 }
 
 #[cfg(feature = "server")]
@@ -393,20 +439,18 @@ pub async fn ensure_default_admin(password: Option<String>) {
             generated
         });
 
-        let password_hash = bcrypt::hash(&admin_password, bcrypt::DEFAULT_COST)
-            .expect("failed to hash password");
+        let password_hash =
+            bcrypt::hash(&admin_password, bcrypt::DEFAULT_COST).expect("failed to hash password");
 
         let user_id = uuid::Uuid::new_v4().to_string();
-        sqlx::query(
-            "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
-        )
-        .bind(&user_id)
-        .bind("admin")
-        .bind(&password_hash)
-        .bind("admin")
-        .execute(pool)
-        .await
-        .expect("failed to create default admin");
+        sqlx::query("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)")
+            .bind(&user_id)
+            .bind("admin")
+            .bind(&password_hash)
+            .bind("admin")
+            .execute(pool)
+            .await
+            .expect("failed to create default admin");
 
         tracing::info!("Created default admin user: admin / {}", admin_password);
     }

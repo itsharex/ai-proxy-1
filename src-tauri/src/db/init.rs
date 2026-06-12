@@ -82,12 +82,11 @@ pub async fn init_db(db_path: &str) -> Result<(), sqlx::Error> {
     }
 
     // Migration 008: add timeout settings
-    let has_request_timeout: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM settings WHERE key = 'request_timeout'",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
+    let has_request_timeout: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM settings WHERE key = 'request_timeout'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
 
     if !has_request_timeout {
         let migration8 = include_str!("../../migrations/008_add_timeout_settings.sql");

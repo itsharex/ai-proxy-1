@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::converter::ir::{
-    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrStreamError, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage, IrThinkingConfig,
+    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrStreamError,
+    IrThinkingConfig, IrTool, IrToolCall, IrToolCallDelta, IrUsage,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -92,7 +92,10 @@ impl FormatParser for ResponsesParser {
         });
 
         let tool_choice = body.get("tool_choice").cloned();
-        let response_format = body.get("text").and_then(|t| t.get("format")).cloned()
+        let response_format = body
+            .get("text")
+            .and_then(|t| t.get("format"))
+            .cloned()
             .or_else(|| body.get("response_format").cloned());
 
         let thinking = body.get("reasoning").and_then(|r| {
@@ -253,7 +256,8 @@ impl FormatParser for ResponsesParser {
                         completion_tokens: u["output_tokens"].as_u64()? as u32,
                         total_tokens: u["input_tokens"].as_u64()? as u32
                             + u["output_tokens"].as_u64()? as u32,
-                        cached_tokens: u.get("input_tokens_details")
+                        cached_tokens: u
+                            .get("input_tokens_details")
                             .and_then(|d| d["cached_tokens"].as_u64())
                             .unwrap_or(0) as u32,
                         cache_creation_input_tokens: 0,
@@ -279,9 +283,7 @@ impl FormatParser for ResponsesParser {
                     .as_str()
                     .unwrap_or("upstream response failed")
                     .to_string();
-                let error_code = error_obj["code"]
-                    .as_str()
-                    .map(String::from);
+                let error_code = error_obj["code"].as_str().map(String::from);
 
                 let usage = response_obj.get("usage").and_then(|u| {
                     Some(IrUsage {
@@ -289,7 +291,8 @@ impl FormatParser for ResponsesParser {
                         completion_tokens: u["output_tokens"].as_u64()? as u32,
                         total_tokens: u["input_tokens"].as_u64()? as u32
                             + u["output_tokens"].as_u64()? as u32,
-                        cached_tokens: u.get("input_tokens_details")
+                        cached_tokens: u
+                            .get("input_tokens_details")
                             .and_then(|d| d["cached_tokens"].as_u64())
                             .unwrap_or(0) as u32,
                         cache_creation_input_tokens: 0,
@@ -387,7 +390,8 @@ impl FormatParser for ResponsesParser {
                     completion_tokens: u["output_tokens"].as_u64()? as u32,
                     total_tokens: u["input_tokens"].as_u64()? as u32
                         + u["output_tokens"].as_u64()? as u32,
-                    cached_tokens: u.get("input_tokens_details")
+                    cached_tokens: u
+                        .get("input_tokens_details")
                         .and_then(|d| d["cached_tokens"].as_u64())
                         .unwrap_or(0) as u32,
                     cache_creation_input_tokens: 0,
@@ -502,7 +506,8 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
 
             // For assistant messages, extract <thinking> tags from content
             if role == IrRole::Assistant && !content_parts.is_empty() {
-                let all_text: String = content_parts.iter()
+                let all_text: String = content_parts
+                    .iter()
                     .filter_map(|p| match p {
                         IrContentPart::Text { text, .. } => Some(text.as_str()),
                         _ => None,
@@ -513,11 +518,17 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 let (thinking_opt, clean) = split_thinking_and_content(&all_text);
                 content_parts.clear();
                 if let Some(thinking) = thinking_opt {
-                    content_parts.push(IrContentPart::Thinking { text: thinking, signature: None });
+                    content_parts.push(IrContentPart::Thinking {
+                        text: thinking,
+                        signature: None,
+                    });
                 }
                 let trimmed = clean.trim();
                 if !trimmed.is_empty() {
-                    content_parts.push(IrContentPart::Text { text: trimmed.to_string(), citations: None });
+                    content_parts.push(IrContentPart::Text {
+                        text: trimmed.to_string(),
+                        citations: None,
+                    });
                 }
             }
 
@@ -530,7 +541,8 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
             }))
         }
         "reasoning" => {
-            let text = item.get("summary")
+            let text = item
+                .get("summary")
                 .and_then(|s| s.as_array())
                 .map(|arr| {
                     arr.iter()
@@ -545,7 +557,10 @@ fn parse_input_item(item: &Value) -> Result<Option<IrMessage>, ProxyError> {
                 content: if text.is_empty() {
                     vec![]
                 } else {
-                    vec![IrContentPart::Thinking { text, signature: None }]
+                    vec![IrContentPart::Thinking {
+                        text,
+                        signature: None,
+                    }]
                 },
                 name: None,
                 tool_call_id: None,
@@ -575,7 +590,14 @@ fn split_thinking_and_content(text: &str) -> (Option<String>, String) {
         }
     }
 
-    (if thinking.is_empty() { None } else { Some(thinking) }, remaining)
+    (
+        if thinking.is_empty() {
+            None
+        } else {
+            Some(thinking)
+        },
+        remaining,
+    )
 }
 
 /// Merge consecutive assistant messages into one.
@@ -590,14 +612,13 @@ fn merge_consecutive_assistant_messages(messages: Vec<IrMessage>) -> Vec<IrMessa
         if let Some(last) = result.last_mut() {
             if last.role == IrRole::Assistant && msg.role == IrRole::Assistant {
                 if !msg.content.is_empty() {
-                    last.content
-                        .extend(msg.content.into_iter().filter(|p| {
-                            if let IrContentPart::Text { text, .. } = p {
-                                !text.is_empty()
-                            } else {
-                                true
-                            }
-                        }));
+                    last.content.extend(msg.content.into_iter().filter(|p| {
+                        if let IrContentPart::Text { text, .. } = p {
+                            !text.is_empty()
+                        } else {
+                            true
+                        }
+                    }));
                 }
                 match (&mut last.tool_calls, msg.tool_calls) {
                     (Some(existing), Some(new)) => existing.extend(new),

@@ -1,7 +1,7 @@
-pub mod router;
+pub mod api;
 pub mod handlers;
 pub mod middleware;
-pub mod api;
+pub mod router;
 
 use axum::Router;
 use std::net::SocketAddr;
@@ -13,15 +13,23 @@ use crate::server::router::create_router;
 pub async fn create_server(host: &str, port: u16) -> Router {
     let cors = create_cors_layer(host);
     let app = create_router().layer(cors);
-    info!("HTTP server configured on {}:{} with CORS for host '{}'", host, port, host);
+    info!(
+        "HTTP server configured on {}:{} with CORS for host '{}'",
+        host, port, host
+    );
     app
 }
 
-pub async fn start_server(host: &str, port: u16, mut shutdown_rx: tokio::sync::watch::Receiver<bool>) {
+pub async fn start_server(
+    host: &str,
+    port: u16,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) {
     let app = create_server(host, port).await;
 
     let addr = SocketAddr::new(
-        host.parse().unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
+        host.parse()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
         port,
     );
 
@@ -58,14 +66,15 @@ pub async fn start_server_with_static(
     let mut app = create_server(host, port).await;
 
     if let Some(dir) = static_dir.filter(|s| !s.is_empty()) {
-        let serve_dir = tower_http::services::ServeDir::new(&dir)
-            .append_index_html_on_directories(true);
+        let serve_dir =
+            tower_http::services::ServeDir::new(&dir).append_index_html_on_directories(true);
         app = app.fallback_service(serve_dir);
         info!("Static file service enabled: {}", dir);
     }
 
     let addr = SocketAddr::new(
-        host.parse().unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
+        host.parse()
+            .unwrap_or_else(|_| "127.0.0.1".parse().unwrap()),
         port,
     );
 

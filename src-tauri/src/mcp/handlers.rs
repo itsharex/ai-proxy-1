@@ -1,14 +1,14 @@
-use axum::Json;
 use axum::extract::Path;
-use uuid::Uuid;
+use axum::Json;
 use chrono::Utc;
+use uuid::Uuid;
 
-use crate::db::get_pool;
+use super::sync;
+use super::types::*;
 #[cfg(feature = "desktop")]
 use crate::apps::types::AppType;
-use crate::server::api::{ok, err_json, ApiError, ApiResponse};
-use super::types::*;
-use super::sync;
+use crate::db::get_pool;
+use crate::server::api::{err_json, ok, ApiError, ApiResponse};
 
 pub async fn list_servers() -> Json<ApiResponse<Vec<McpServerWithBindings>>> {
     let pool = get_pool().await;
@@ -188,13 +188,11 @@ pub async fn update_bindings(
 ) -> Result<Json<ApiResponse<Vec<McpAppBinding>>>, Json<ApiError>> {
     let pool = get_pool().await;
 
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM mcp_servers WHERE id = ?",
-    )
-    .bind(&id)
-    .fetch_one(pool)
-    .await
-    .map_err(|e| err_json(format!("Database error: {}", e)))?;
+    let exists: bool = sqlx::query_scalar("SELECT COUNT(*) > 0 FROM mcp_servers WHERE id = ?")
+        .bind(&id)
+        .fetch_one(pool)
+        .await
+        .map_err(|e| err_json(format!("Database error: {}", e)))?;
 
     if !exists {
         return Err(err_json("MCP server not found"));
@@ -237,7 +235,8 @@ pub async fn import_from_app(
     let app_type = AppType::from_str(&app_type_str)
         .ok_or_else(|| err_json(format!("Unknown app type: {}", app_type_str)))?;
 
-    let result = sync::import_from_app(&app_type).await
+    let result = sync::import_from_app(&app_type)
+        .await
         .map_err(|e| err_json(e))?;
 
     Ok(ok(result))
@@ -250,7 +249,8 @@ pub async fn apply_to_app(
     let app_type = AppType::from_str(&app_type_str)
         .ok_or_else(|| err_json(format!("Unknown app type: {}", app_type_str)))?;
 
-    let result = sync::apply_to_app(&app_type).await
+    let result = sync::apply_to_app(&app_type)
+        .await
         .map_err(|e| err_json(e))?;
 
     Ok(ok(result))

@@ -1,8 +1,8 @@
 use serde_json::Value;
 
 use crate::converter::ir::{
-    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool,
-    IrToolCall, IrToolCallDelta, IrUsage,
+    IrContentPart, IrMessage, IrRequest, IrResponse, IrRole, IrStreamChunk, IrTool, IrToolCall,
+    IrToolCallDelta, IrUsage,
 };
 use crate::converter::FormatParser;
 use crate::error::ProxyError;
@@ -31,7 +31,10 @@ impl FormatParser for GeminiParser {
                     role: IrRole::System,
                     content: system_texts
                         .into_iter()
-                        .map(|text| IrContentPart::Text { text, citations: None })
+                        .map(|text| IrContentPart::Text {
+                            text,
+                            citations: None,
+                        })
                         .collect(),
                     name: None,
                     tool_call_id: None,
@@ -73,12 +76,8 @@ impl FormatParser for GeminiParser {
         let temperature = body["generationConfig"]["temperature"]
             .as_f64()
             .map(|v| v as f32);
-        let top_p = body["generationConfig"]["topP"]
-            .as_f64()
-            .map(|v| v as f32);
-        let top_k = body["generationConfig"]["topK"]
-            .as_u64()
-            .map(|v| v as u32);
+        let top_p = body["generationConfig"]["topP"].as_f64().map(|v| v as f32);
+        let top_k = body["generationConfig"]["topK"].as_u64().map(|v| v as u32);
         let max_tokens = body["generationConfig"]["maxOutputTokens"]
             .as_u64()
             .map(|v| v as u32);
@@ -91,11 +90,10 @@ impl FormatParser for GeminiParser {
                     .collect::<Vec<_>>()
             });
 
-        let response_format = body["generationConfig"]
-            .get("responseMimeType")
-            .cloned();
+        let response_format = body["generationConfig"].get("responseMimeType").cloned();
 
-        let tool_choice = body.get("toolConfig")
+        let tool_choice = body
+            .get("toolConfig")
             .and_then(|tc| tc.get("function_calling_config"))
             .and_then(|fcc| {
                 let mode = fcc["mode"].as_str().unwrap_or("AUTO");
@@ -153,16 +151,12 @@ impl FormatParser for GeminiParser {
         let chunk: Value = serde_json::from_str(data)
             .map_err(|e| ProxyError::Parse(format!("failed to parse SSE chunk: {}", e)))?;
 
-        let candidate = chunk["candidates"]
-            .as_array()
-            .and_then(|a| a.first());
+        let candidate = chunk["candidates"].as_array().and_then(|a| a.first());
 
         let mut delta_content_parts: Vec<String> = Vec::new();
         let mut delta_tool_calls: Vec<IrToolCallDelta> = Vec::new();
 
-        if let Some(parts) = candidate
-            .and_then(|c| c["content"]["parts"].as_array())
-        {
+        if let Some(parts) = candidate.and_then(|c| c["content"]["parts"].as_array()) {
             for (idx, part) in parts.iter().enumerate() {
                 if let Some(text) = part["text"].as_str() {
                     delta_content_parts.push(text.to_string());
@@ -263,9 +257,7 @@ impl FormatParser for GeminiParser {
             },
         };
 
-        let finish_reason = candidate["finishReason"]
-            .as_str()
-            .map(String::from);
+        let finish_reason = candidate["finishReason"].as_str().map(String::from);
 
         let usage = body
             .get("usageMetadata")

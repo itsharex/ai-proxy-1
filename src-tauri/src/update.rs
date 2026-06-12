@@ -4,7 +4,10 @@ use tauri::Emitter;
 
 const GITHUB_REPO: &str = "mrhuangyong/ai-proxy";
 const GITHUB_API_URL: &str = "https://api.github.com/repos";
-const GITHUB_TOKEN: &str = concat!("github_pat_11AE2FARA0", "qKQbpKG5fFza_w8oj5Hqez40KG91dychxpZEs7myhKDntTMKECk1IMTtURWYME3ObPPaWZ9w");
+const GITHUB_TOKEN: &str = concat!(
+    "github_pat_11AE2FARA0",
+    "qKQbpKG5fFza_w8oj5Hqez40KG91dychxpZEs7myhKDntTMKECk1IMTtURWYME3ObPPaWZ9w"
+);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {
@@ -16,8 +19,10 @@ pub struct UpdateInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct GithubAsset {
-    #[allow(dead_code)] name: String,
-    #[allow(dead_code)] url: String,
+    #[allow(dead_code)]
+    name: String,
+    #[allow(dead_code)]
+    url: String,
     browser_download_url: String,
     size: u64,
 }
@@ -36,7 +41,7 @@ pub struct GithubRelease {
 /// - macOS x86_64  → *_x64.dmg (fallback)
 /// - Windows x86_64 → *_x64-setup.exe
 fn pick_asset(assets: &[GithubAsset]) -> Option<(String, u64)> {
-    let os = std::env::consts::OS;   // "macos" | "windows" | "linux"
+    let os = std::env::consts::OS; // "macos" | "windows" | "linux"
     let arch = std::env::consts::ARCH; // "aarch64" | "x86_64"
 
     // Build a priority-ordered list of patterns
@@ -173,7 +178,10 @@ pub async fn download_update(
     }
 
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let total_size = response.content_length().unwrap_or(0);
@@ -188,20 +196,14 @@ pub async fn download_update(
                 .nth(1)
                 .map(|s| s.trim().trim_matches('"').to_string())
         })
-        .unwrap_or_else(|| {
-            url.split('/')
-                .last()
-                .unwrap_or("update")
-                .to_string()
-        });
+        .unwrap_or_else(|| url.split('/').last().unwrap_or("update").to_string());
 
     // Save to Downloads directory
-    let downloads_dir = dirs::download_dir()
-        .unwrap_or_else(|| std::env::temp_dir());
+    let downloads_dir = dirs::download_dir().unwrap_or_else(|| std::env::temp_dir());
     let file_path = downloads_dir.join(&file_name);
 
-    let mut file = std::fs::File::create(&file_path)
-        .map_err(|e| format!("Failed to create file: {e}"))?;
+    let mut file =
+        std::fs::File::create(&file_path).map_err(|e| format!("Failed to create file: {e}"))?;
 
     let mut downloaded: u64 = 0;
     let mut last_percent: u8 = 0;
@@ -224,16 +226,18 @@ pub async fn download_update(
         // Only emit when percent changes (at least 1% step)
         if percent != last_percent || downloaded == total_size {
             last_percent = percent;
-            let _ = app.emit("update-download-progress", DownloadProgress {
-                downloaded,
-                total: total_size,
-                percent,
-            });
+            let _ = app.emit(
+                "update-download-progress",
+                DownloadProgress {
+                    downloaded,
+                    total: total_size,
+                    percent,
+                },
+            );
         }
     }
 
-    file.flush()
-        .map_err(|e| format!("Flush error: {e}"))?;
+    file.flush().map_err(|e| format!("Flush error: {e}"))?;
 
     Ok(file_path.to_string_lossy().to_string())
 }

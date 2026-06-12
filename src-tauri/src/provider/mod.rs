@@ -1,2 +1,2 @@
-pub mod manager;
 pub mod endpoint;
+pub mod manager;

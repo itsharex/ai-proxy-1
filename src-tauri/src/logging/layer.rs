@@ -1,12 +1,12 @@
-use std::sync::{Arc, Mutex};
-use std::collections::VecDeque;
 use serde::Serialize;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 use tokio::sync::broadcast;
-use tracing_subscriber::Layer;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::field::Visit;
 use tracing_subscriber::registry::LookupSpan;
-use std::time::SystemTime;
+use tracing_subscriber::Layer;
 
 const BUFFER_CAPACITY: usize = 2000;
 const CHANNEL_CAPACITY: usize = 1000;
@@ -72,7 +72,9 @@ struct StringVisitor {
 
 impl StringVisitor {
     fn new() -> Self {
-        Self { message: String::new() }
+        Self {
+            message: String::new(),
+        }
     }
 }
 
@@ -84,7 +86,8 @@ impl Visit for StringVisitor {
             if !self.message.is_empty() {
                 self.message.push(' ');
             }
-            self.message.push_str(&format!("{}={:?}", field.name(), value));
+            self.message
+                .push_str(&format!("{}={:?}", field.name(), value));
         }
     }
 
@@ -95,7 +98,8 @@ impl Visit for StringVisitor {
             if !self.message.is_empty() {
                 self.message.push(' ');
             }
-            self.message.push_str(&format!("{}={}", field.name(), value));
+            self.message
+                .push_str(&format!("{}={}", field.name(), value));
         }
     }
 }

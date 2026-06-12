@@ -12,12 +12,11 @@ pub async fn ensure_default_source(pool: &SqlitePool) {
     let home = dirs::home_dir().unwrap_or_default();
     let global_path = home.join(".agents/skills");
 
-    let exists: bool = sqlx::query_scalar(
-        "SELECT COUNT(*) > 0 FROM skill_sources WHERE is_global = 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(false);
+    let exists: bool =
+        sqlx::query_scalar("SELECT COUNT(*) > 0 FROM skill_sources WHERE is_global = 1")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(false);
 
     if !exists {
         let id = Uuid::new_v4().to_string();
@@ -46,12 +45,11 @@ pub async fn scan_all(pool: &SqlitePool) -> Result<(), String> {
         let path = Path::new(&source.path);
         let scanned = scanner::scan_source(path);
 
-        let existing: Vec<Skill> =
-            sqlx::query_as("SELECT * FROM skills WHERE source_id = ?")
-                .bind(&source.id)
-                .fetch_all(pool)
-                .await
-                .map_err(|e| e.to_string())?;
+        let existing: Vec<Skill> = sqlx::query_as("SELECT * FROM skills WHERE source_id = ?")
+            .bind(&source.id)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let existing_map: std::collections::HashMap<String, Skill> = existing
             .into_iter()
@@ -130,13 +128,12 @@ pub async fn discover_sources(pool: &SqlitePool) -> Result<Vec<SkillSource>, Str
     for (name, path) in discovered {
         let path_str = path.to_string_lossy().to_string();
 
-        let exists: bool = sqlx::query_scalar(
-            "SELECT COUNT(*) > 0 FROM skill_sources WHERE path = ?",
-        )
-        .bind(&path_str)
-        .fetch_one(pool)
-        .await
-        .map_err(|e| e.to_string())?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT COUNT(*) > 0 FROM skill_sources WHERE path = ?")
+                .bind(&path_str)
+                .fetch_one(pool)
+                .await
+                .map_err(|e| e.to_string())?;
 
         if !exists {
             let id = Uuid::new_v4().to_string();
@@ -167,7 +164,10 @@ pub async fn discover_sources(pool: &SqlitePool) -> Result<Vec<SkillSource>, Str
 }
 
 /// Install a skill to target sources by creating symlinks
-pub async fn install_skill(pool: &SqlitePool, body: &InstallSkillBody) -> Result<Vec<String>, String> {
+pub async fn install_skill(
+    pool: &SqlitePool,
+    body: &InstallSkillBody,
+) -> Result<Vec<String>, String> {
     let skill: Skill = sqlx::query_as("SELECT * FROM skills WHERE id = ?")
         .bind(&body.skill_id)
         .fetch_one(pool)
@@ -197,8 +197,8 @@ pub async fn install_skill(pool: &SqlitePool, body: &InstallSkillBody) -> Result
                 if let Some(target) = &link_target {
                     let canonical_skill = fs::canonicalize(&skill.skill_path)
                         .unwrap_or_else(|_| PathBuf::from(&skill.skill_path));
-                    let canonical_target = fs::canonicalize(target)
-                        .unwrap_or_else(|_| PathBuf::from(target));
+                    let canonical_target =
+                        fs::canonicalize(target).unwrap_or_else(|_| PathBuf::from(target));
                     if canonical_skill == canonical_target {
                         results.push(format!("{}: 已安装，跳过", source.name));
                         continue;
@@ -257,7 +257,7 @@ pub async fn find_linked_skills(pool: &SqlitePool, skill_id: &str) -> Result<Vec
         .to_string();
 
     let linked: Vec<Skill> = sqlx::query_as(
-        "SELECT * FROM skills WHERE is_symlink = 1 AND source_id != ? AND skill_path LIKE ?"
+        "SELECT * FROM skills WHERE is_symlink = 1 AND source_id != ? AND skill_path LIKE ?",
     )
     .bind(&skill.source_id)
     .bind(format!("%/{}", skill_name))
@@ -270,12 +270,11 @@ pub async fn find_linked_skills(pool: &SqlitePool, skill_id: &str) -> Result<Vec
 
 /// Create a new skill in the global source directory
 pub async fn create_skill(pool: &SqlitePool, body: &CreateSkillBody) -> Result<Skill, String> {
-    let global_source: SkillSource = sqlx::query_as(
-        "SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("全局技能库未配置: {}", e))?;
+    let global_source: SkillSource =
+        sqlx::query_as("SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("全局技能库未配置: {}", e))?;
 
     let skill_dir = Path::new(&global_source.path).join(&body.name);
     if skill_dir.exists() {
@@ -371,7 +370,11 @@ pub async fn delete_skill(pool: &SqlitePool, skill_id: &str) -> Result<Vec<Strin
 }
 
 /// Update SKILL.md content
-pub async fn update_skill_md(pool: &SqlitePool, skill_id: &str, content: &str) -> Result<(), String> {
+pub async fn update_skill_md(
+    pool: &SqlitePool,
+    skill_id: &str,
+    content: &str,
+) -> Result<(), String> {
     let skill: Skill = sqlx::query_as("SELECT * FROM skills WHERE id = ?")
         .bind(skill_id)
         .fetch_one(pool)
@@ -396,8 +399,7 @@ pub async fn update_skill_md(pool: &SqlitePool, skill_id: &str, content: &str) -
     };
 
     let skill_md_path = actual_path.join("SKILL.md");
-    fs::write(&skill_md_path, content)
-        .map_err(|e| format!("写入 SKILL.md 失败: {}", e))?;
+    fs::write(&skill_md_path, content).map_err(|e| format!("写入 SKILL.md 失败: {}", e))?;
 
     let (name, description) = scanner::parse_skill_md(&skill_md_path);
     sqlx::query("UPDATE skills SET name=?, description=?, updated_at=datetime('now') WHERE id=?")
@@ -442,12 +444,11 @@ pub async fn read_skill_md(pool: &SqlitePool, skill_id: &str) -> Result<String, 
 
 /// Install skill from URL (git clone)
 pub async fn install_from_url(pool: &SqlitePool, url: &str) -> Result<Skill, String> {
-    let global_source: SkillSource = sqlx::query_as(
-        "SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| format!("全局技能库未配置: {}", e))?;
+    let global_source: SkillSource =
+        sqlx::query_as("SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("全局技能库未配置: {}", e))?;
 
     let global_path = Path::new(&global_source.path);
 
@@ -546,12 +547,10 @@ pub async fn install_from_marketplace(
 
 /// Remove all broken symlinks and return cleanup log
 pub async fn cleanup_broken_symlinks(pool: &SqlitePool) -> Result<Vec<String>, String> {
-    let broken: Vec<Skill> = sqlx::query_as(
-        "SELECT * FROM skills WHERE is_broken_symlink = 1",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    let broken: Vec<Skill> = sqlx::query_as("SELECT * FROM skills WHERE is_broken_symlink = 1")
+        .fetch_all(pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let mut cleanup_log = Vec::new();
 
@@ -573,12 +572,13 @@ pub async fn cleanup_broken_symlinks(pool: &SqlitePool) -> Result<Vec<String>, S
 
 /// Remove a single broken symlink by id
 pub async fn cleanup_single_broken(pool: &SqlitePool, skill_id: &str) -> Result<String, String> {
-    let skill: Skill = sqlx::query_as("SELECT * FROM skills WHERE id = ? AND is_broken_symlink = 1")
-        .bind(skill_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(|e| e.to_string())?
-        .ok_or("该技能不是失效链接")?;
+    let skill: Skill =
+        sqlx::query_as("SELECT * FROM skills WHERE id = ? AND is_broken_symlink = 1")
+            .bind(skill_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("该技能不是失效链接")?;
 
     let path = Path::new(&skill.skill_path);
     if path.exists() || path.is_symlink() {
@@ -619,12 +619,11 @@ pub async fn copy_skill_to_global(
         return Err(("全局源中的技能不需要复制".to_string(), None));
     }
 
-    let global_source: SkillSource = sqlx::query_as(
-        "SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(|e| (format!("全局技能库未配置: {}", e), None))?;
+    let global_source: SkillSource =
+        sqlx::query_as("SELECT * FROM skill_sources WHERE is_global = 1 LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .map_err(|e| (format!("全局技能库未配置: {}", e), None))?;
 
     let skill_name = Path::new(&skill.skill_path)
         .file_name()
@@ -637,30 +636,33 @@ pub async fn copy_skill_to_global(
     if target_dir.exists() || target_dir.is_symlink() {
         if !force {
             // Find the existing skill in global source
-            let existing: Option<Skill> = sqlx::query_as(
-                "SELECT * FROM skills WHERE source_id = ? AND skill_path LIKE ?"
-            )
-            .bind(&global_source.id)
-            .bind(format!("%/{}", skill_name))
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| (e.to_string(), None))?;
+            let existing: Option<Skill> =
+                sqlx::query_as("SELECT * FROM skills WHERE source_id = ? AND skill_path LIKE ?")
+                    .bind(&global_source.id)
+                    .bind(format!("%/{}", skill_name))
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(|e| (e.to_string(), None))?;
 
-            let conflict = existing.map(|s| super::types::CopyConflictInfo {
-                existing_skill_id: s.id,
-                existing_skill_name: s.name,
-            }).unwrap_or_else(|| super::types::CopyConflictInfo {
-                existing_skill_id: String::new(),
-                existing_skill_name: skill_name.clone(),
-            });
+            let conflict = existing
+                .map(|s| super::types::CopyConflictInfo {
+                    existing_skill_id: s.id,
+                    existing_skill_name: s.name,
+                })
+                .unwrap_or_else(|| super::types::CopyConflictInfo {
+                    existing_skill_id: String::new(),
+                    existing_skill_name: skill_name.clone(),
+                });
 
             return Err(("全局源已存在同名技能".to_string(), Some(conflict)));
         }
         // force: remove existing target
         if target_dir.is_symlink() {
-            fs::remove_file(&target_dir).map_err(|e| (format!("删除已存在链接失败: {}", e), None))?;
+            fs::remove_file(&target_dir)
+                .map_err(|e| (format!("删除已存在链接失败: {}", e), None))?;
         } else if target_dir.is_dir() {
-            fs::remove_dir_all(&target_dir).map_err(|e| (format!("删除已存在目录失败: {}", e), None))?;
+            fs::remove_dir_all(&target_dir)
+                .map_err(|e| (format!("删除已存在目录失败: {}", e), None))?;
         }
         // Remove existing DB record if any
         sqlx::query("DELETE FROM skills WHERE source_id = ? AND skill_path LIKE ?")
@@ -672,21 +674,19 @@ pub async fn copy_skill_to_global(
     }
 
     // Recursively copy directory
-    copy_dir_recursive(Path::new(&skill.skill_path), &target_dir)
-        .map_err(|e| (e, None))?;
+    copy_dir_recursive(Path::new(&skill.skill_path), &target_dir).map_err(|e| (e, None))?;
 
     // Scan to update database
     scan_all(pool).await.map_err(|e| (e, None))?;
 
     // Find the newly created skill
-    let new_skill: Skill = sqlx::query_as(
-        "SELECT * FROM skills WHERE source_id = ? AND skill_path = ?"
-    )
-    .bind(&global_source.id)
-    .bind(target_dir.to_string_lossy().to_string())
-    .fetch_one(pool)
-    .await
-    .map_err(|e| (format!("复制后未找到技能: {}", e), None))?;
+    let new_skill: Skill =
+        sqlx::query_as("SELECT * FROM skills WHERE source_id = ? AND skill_path = ?")
+            .bind(&global_source.id)
+            .bind(target_dir.to_string_lossy().to_string())
+            .fetch_one(pool)
+            .await
+            .map_err(|e| (format!("复制后未找到技能: {}", e), None))?;
 
     Ok(new_skill)
 }
@@ -703,16 +703,15 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
         let dst_path = dst.join(entry.file_name());
 
         if src_path.is_symlink() {
-            let link_target = fs::read_link(&src_path)
-                .map_err(|e| format!("读取符号链接失败: {}", e))?;
+            let link_target =
+                fs::read_link(&src_path).map_err(|e| format!("读取符号链接失败: {}", e))?;
             #[cfg(unix)]
             std::os::unix::fs::symlink(&link_target, &dst_path)
                 .map_err(|e| format!("创建符号链接失败: {}", e))?;
         } else if src_path.is_dir() {
             copy_dir_recursive(&src_path, &dst_path)?;
         } else {
-            fs::copy(&src_path, &dst_path)
-                .map_err(|e| format!("复制文件失败: {}", e))?;
+            fs::copy(&src_path, &dst_path).map_err(|e| format!("复制文件失败: {}", e))?;
         }
     }
     Ok(())

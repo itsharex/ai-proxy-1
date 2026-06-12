@@ -1,5 +1,5 @@
-use sqlx::FromRow;
 use serde::Deserialize;
+use sqlx::FromRow;
 use std::collections::HashMap;
 
 use crate::converter::ir::IrRequest;
@@ -36,14 +36,13 @@ impl InterceptorEngine {
         let mut rules = Vec::new();
 
         for db_rule in db_rules {
-            let rule_phase = RulePhase::from_str(&db_rule.phase)
-                .unwrap_or(RulePhase::Pre);
+            let rule_phase = RulePhase::from_str(&db_rule.phase).unwrap_or(RulePhase::Pre);
 
-            let condition: RuleCondition = serde_json::from_str(&db_rule.condition_json)
-                .unwrap_or(RuleCondition::Always);
+            let condition: RuleCondition =
+                serde_json::from_str(&db_rule.condition_json).unwrap_or(RuleCondition::Always);
 
-            let action: RuleAction = serde_json::from_str(&db_rule.action_json)
-                .unwrap_or(RuleAction::SetHeader {
+            let action: RuleAction =
+                serde_json::from_str(&db_rule.action_json).unwrap_or(RuleAction::SetHeader {
                     name: "x-no-op".into(),
                     value: "true".into(),
                 });
@@ -69,9 +68,7 @@ impl InterceptorEngine {
         headers: &HashMap<String, String>,
     ) -> bool {
         match condition {
-            RuleCondition::ModelMatches { pattern } => {
-                Self::glob_match(&request.model, pattern)
-            }
+            RuleCondition::ModelMatches { pattern } => Self::glob_match(&request.model, pattern),
             RuleCondition::PathContains { substring } => path.contains(substring.as_str()),
             RuleCondition::HeaderExists { name } => headers.contains_key(&name.to_lowercase()),
             RuleCondition::Always => true,
@@ -114,7 +111,11 @@ impl InterceptorEngine {
     ) {
         match action {
             RuleAction::ReplaceModel { model } => {
-                tracing::info!("Interceptor: replacing model '{}' with '{}'", request.model, model);
+                tracing::info!(
+                    "Interceptor: replacing model '{}' with '{}'",
+                    request.model,
+                    model
+                );
                 request.model = model.clone();
             }
             RuleAction::SetHeader { name, value } => {
@@ -146,52 +147,47 @@ impl InterceptorEngine {
                         .iter_mut()
                         .find(|m| m.role == crate::converter::ir::IrRole::System)
                     {
-                        first_system.content.push(
-                            crate::converter::ir::IrContentPart::Text {
+                        first_system
+                            .content
+                            .push(crate::converter::ir::IrContentPart::Text {
                                 text: format!("\n\n{}", prompt),
                                 citations: None,
-                            },
-                        );
+                            });
                     }
                 } else {
                     request.messages.insert(0, system_msg);
                 }
             }
-            RuleAction::OverrideParameter { parameter, value } => {
-                match parameter.as_str() {
-                    "temperature" => {
-                        if let Some(v) = value.as_f64() {
-                            request.temperature = Some(v as f32);
-                        }
-                    }
-                    "top_p" => {
-                        if let Some(v) = value.as_f64() {
-                            request.top_p = Some(v as f32);
-                        }
-                    }
-                    "max_tokens" => {
-                        if let Some(v) = value.as_u64() {
-                            request.max_tokens = Some(v as u32);
-                        }
-                    }
-                    "stream" => {
-                        if let Some(v) = value.as_bool() {
-                            request.stream = v;
-                        }
-                    }
-                    "thinking" => {
-                        if value.is_null() || value.as_bool() == Some(false) {
-                            request.thinking = None;
-                        }
-                    }
-                    _ => {
-                        tracing::warn!(
-                            "Unknown override parameter: {}",
-                            parameter
-                        );
+            RuleAction::OverrideParameter { parameter, value } => match parameter.as_str() {
+                "temperature" => {
+                    if let Some(v) = value.as_f64() {
+                        request.temperature = Some(v as f32);
                     }
                 }
-            }
+                "top_p" => {
+                    if let Some(v) = value.as_f64() {
+                        request.top_p = Some(v as f32);
+                    }
+                }
+                "max_tokens" => {
+                    if let Some(v) = value.as_u64() {
+                        request.max_tokens = Some(v as u32);
+                    }
+                }
+                "stream" => {
+                    if let Some(v) = value.as_bool() {
+                        request.stream = v;
+                    }
+                }
+                "thinking" => {
+                    if value.is_null() || value.as_bool() == Some(false) {
+                        request.thinking = None;
+                    }
+                }
+                _ => {
+                    tracing::warn!("Unknown override parameter: {}", parameter);
+                }
+            },
             RuleAction::FilterResponse { .. } => {
                 // Applied during response phase, not here
             }
