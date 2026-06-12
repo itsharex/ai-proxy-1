@@ -30,3 +30,4 @@ docs/superpowers
 
 # Local agent skills
 .agents
+.env
